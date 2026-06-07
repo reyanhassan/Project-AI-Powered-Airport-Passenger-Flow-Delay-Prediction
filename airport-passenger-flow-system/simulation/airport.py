@@ -45,3 +45,17 @@ class Airport:
             # The timeout represents the staff member serving this passenger.
             yield self.env.timeout(service_time)
             passenger.add_event("finished_check_in", self.env.now)
+
+    def pass_security(self, passenger: Passenger, service_time: float):
+        """Simulate one passenger waiting for and passing security."""
+
+        passenger.add_event("joined_security_queue", self.env.now)
+        queue_start = self.env.now
+
+        with self.security_lanes.request() as request:
+            yield request
+            passenger.security_wait = self.env.now - queue_start
+            passenger.add_event("started_security", self.env.now)
+
+            yield self.env.timeout(service_time)
+            passenger.add_event("finished_security", self.env.now)
