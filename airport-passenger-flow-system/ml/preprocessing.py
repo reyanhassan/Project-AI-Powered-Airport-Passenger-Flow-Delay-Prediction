@@ -5,6 +5,8 @@ load the dataset, clean missing values, encode categorical columns, and split
 the data into training and testing sets.
 """
 
+import math
+import random
 from pathlib import Path
 
 import pandas as pd
@@ -36,56 +38,195 @@ NUMERIC_COLUMNS = [
 REQUIRED_COLUMNS = UNUSED_COLUMNS + CATEGORICAL_COLUMNS + NUMERIC_COLUMNS + [TARGET_COLUMN]
 
 
-def create_sample_delay_dataset(output_path: str | Path = RAW_DATA_PATH) -> Path:
-    """Create a small airline delay dataset when no raw dataset is available."""
+def _weighted_choice(rng: random.Random, options: list[tuple[object, float]]) -> object:
+    """Choose one value from weighted options using beginner-friendly code."""
+
+    total_weight = sum(weight for _, weight in options)
+    random_value = rng.uniform(0, total_weight)
+    running_weight = 0.0
+
+    for value, weight in options:
+        running_weight += weight
+        if random_value <= running_weight:
+            return value
+
+    return options[-1][0]
+
+
+def create_sample_delay_dataset(
+    output_path: str | Path = RAW_DATA_PATH,
+    rows: int = 3000,
+    random_seed: int = 42,
+) -> Path:
+    """Create a larger realistic airline delay dataset if no raw data exists."""
 
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
 
-    airlines = ["PIA", "AirBlue", "SereneAir", "FlyJinnah"]
-    airports = ["ISB", "KHI", "LHE", "DXB"]
+    rng = random.Random(random_seed)
+    airlines = ["PIA", "AirBlue", "SereneAir", "FlyJinnah", "Qatar", "Emirates", "Turkish"]
+    airports = ["ISB", "KHI", "LHE", "DXB", "DOH", "IST", "JFK", "LHR", "SIN", "BKK"]
     days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
-    weather_values = ["Clear", "Cloudy", "Rain", "Fog"]
-    hours = [5, 6, 8, 10, 12, 14, 16, 18, 20, 22]
+    weather_options = [
+        ("Clear", 0.52),
+        ("Cloudy", 0.22),
+        ("Rain", 0.15),
+        ("Fog", 0.07),
+        ("Storm", 0.04),
+    ]
+    airline_bias = {
+        "PIA": 0.10,
+        "AirBlue": 0.03,
+        "SereneAir": 0.06,
+        "FlyJinnah": 0.02,
+        "Qatar": -0.04,
+        "Emirates": -0.05,
+        "Turkish": -0.01,
+    }
+    airport_bias = {
+        "ISB": 0.02,
+        "KHI": 0.07,
+        "LHE": 0.04,
+        "DXB": -0.03,
+        "DOH": -0.04,
+        "IST": 0.03,
+        "JFK": 0.08,
+        "LHR": 0.06,
+        "SIN": -0.05,
+        "BKK": 0.01,
+    }
+    weather_bias = {
+        "Clear": -0.25,
+        "Cloudy": -0.05,
+        "Rain": 0.24,
+        "Fog": 0.36,
+        "Storm": 0.55,
+    }
 
-    rows = []
-    for index in range(1, 61):
-        weather = weather_values[index % len(weather_values)]
-        previous_delay = (index * 7) % 58
-        security_wait = 10 + ((index * 4) % 36)
-        gate_changes = 2 if weather == "Fog" else int(weather == "Rain")
+    generated_rows = []
+    for index in range(1, rows + 1):
+        airline = rng.choice(airlines)
+        origin_airport = rng.choice(airports)
+        possible_destinations = [
+            airport for airport in airports if airport != origin_airport
+        ]
+        destination_airport = rng.choice(possible_destinations)
+        flight_day = rng.choice(days)
 
-        delayed = int(
-            weather in {"Rain", "Fog"}
-            or previous_delay >= 30
-            or security_wait >= 34
-            or gate_changes >= 2
+        # Morning and evening peaks are common in airport schedules.
+        scheduled_hour = int(
+            _weighted_choice(
+                rng,
+                [
+                    (5, 0.05),
+                    (6, 0.07),
+                    (7, 0.09),
+                    (8, 0.11),
+                    (9, 0.08),
+                    (10, 0.05),
+                    (11, 0.04),
+                    (12, 0.04),
+                    (13, 0.04),
+                    (14, 0.04),
+                    (15, 0.05),
+                    (16, 0.07),
+                    (17, 0.10),
+                    (18, 0.10),
+                    (19, 0.08),
+                    (20, 0.05),
+                    (21, 0.03),
+                    (22, 0.01),
+                ],
+            )
         )
+        weather_condition = str(_weighted_choice(rng, weather_options))
 
-        rows.append(
+        passenger_count = int(rng.gauss(165, 38))
+        passenger_count = max(55, min(passenger_count, 285))
+
+        base_previous_delay = max(0, rng.gauss(14, 18))
+        if rng.random() < 0.12:
+            base_previous_delay += rng.uniform(30, 90)
+        previous_delay_minutes = int(min(base_previous_delay, 180))
+
+        peak_hour_pressure = 1 if scheduled_hour in {7, 8, 17, 18, 19} else 0
+        security_wait_minutes = int(
+            max(
+                4,
+                rng.gauss(15, 7)
+                + peak_hour_pressure * rng.uniform(4, 12)
+                + max(0, passenger_count - 170) / 12,
+            )
+        )
+        security_wait_minutes = min(security_wait_minutes, 90)
+
+        gate_changes = 0
+        if weather_condition in {"Rain", "Fog", "Storm"} and rng.random() < 0.28:
+            gate_changes += 1
+        if previous_delay_minutes > 50 and rng.random() < 0.25:
+            gate_changes += 1
+        if rng.random() < 0.05:
+            gate_changes += 1
+        gate_changes = min(gate_changes, 4)
+
+        weekend_pressure = 0.08 if flight_day in {"Friday", "Sunday"} else 0.0
+        evening_pressure = 0.10 if scheduled_hour >= 17 else 0.0
+        hidden_operational_noise = rng.gauss(0, 0.45)
+
+        # The label is sampled from probability instead of hard rules. This
+        # creates realistic mixed cases, such as on-time rainy flights and
+        # delayed clear-weather flights.
+        delay_score = (
+            -1.15
+            + airline_bias[airline]
+            + airport_bias[origin_airport]
+            + airport_bias[destination_airport] * 0.55
+            + weather_bias[weather_condition]
+            + previous_delay_minutes * 0.018
+            + security_wait_minutes * 0.014
+            + gate_changes * 0.20
+            + passenger_count * 0.0015
+            + weekend_pressure
+            + evening_pressure
+            + hidden_operational_noise
+        )
+        delay_probability = 1 / (1 + math.exp(-delay_score))
+        delayed = int(rng.random() < delay_probability)
+
+        # Label noise is intentional. Real data has messy exceptions.
+        if rng.random() < 0.08:
+            delayed = 1 - delayed
+
+        generated_rows.append(
             {
                 "flight_id": f"FL{index:03d}",
-                "airline": airlines[index % len(airlines)],
-                "origin_airport": airports[index % len(airports)],
-                "destination_airport": airports[(index + 1) % len(airports)],
-                "flight_day": days[index % len(days)],
-                "scheduled_hour": hours[index % len(hours)],
-                "weather_condition": weather,
-                "passenger_count": 115 + ((index * 9) % 95),
-                "previous_delay_minutes": previous_delay,
+                "airline": airline,
+                "origin_airport": origin_airport,
+                "destination_airport": destination_airport,
+                "flight_day": flight_day,
+                "scheduled_hour": scheduled_hour,
+                "weather_condition": weather_condition,
+                "passenger_count": passenger_count,
+                "previous_delay_minutes": previous_delay_minutes,
                 "security_wait_minutes": security_wait,
                 "gate_changes": gate_changes,
                 "delayed": delayed,
             }
         )
 
-    # Add a few missing values so students can see preprocessing in action.
-    rows[10]["passenger_count"] = None
-    rows[24]["previous_delay_minutes"] = None
-    rows[37]["security_wait_minutes"] = None
-    rows[48]["weather_condition"] = None
+    # Add small amounts of missing data so preprocessing remains meaningful.
+    missing_columns = [
+        "passenger_count",
+        "previous_delay_minutes",
+        "security_wait_minutes",
+        "weather_condition",
+    ]
+    for row in generated_rows:
+        for column in missing_columns:
+            if rng.random() < 0.018:
+                row[column] = None
 
-    pd.DataFrame(rows).to_csv(output_path, index=False)
+    pd.DataFrame(generated_rows).to_csv(output_path, index=False)
     return output_path
 
 
