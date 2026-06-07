@@ -3,6 +3,7 @@
 import sys
 from pathlib import Path
 
+import joblib
 import pandas as pd
 import streamlit as st
 
@@ -16,6 +17,7 @@ from simulation import (
     passengers_to_dataframe,
     run_simulation,
 )
+from ml.preprocessing import clean_delay_data, load_delay_dataset
 
 RAW_DELAY_DATA_PATH = PROJECT_ROOT / "data" / "raw" / "airline_delay_sample.csv"
 CLEAN_DELAY_DATA_PATH = PROJECT_ROOT / "data" / "processed" / "airline_delay_cleaned.csv"
@@ -38,6 +40,26 @@ def load_csv(path: Path) -> pd.DataFrame:
         return pd.read_csv(path)
 
     return pd.DataFrame()
+
+
+@st.cache_resource
+def load_best_model():
+    """Load the saved delay prediction model once per dashboard session."""
+
+    if BEST_MODEL_PATH.exists():
+        return joblib.load(BEST_MODEL_PATH)
+
+    return None
+
+
+@st.cache_data
+def load_clean_delay_data() -> pd.DataFrame:
+    """Load cleaned delay data for dashboard filters and select boxes."""
+
+    if CLEAN_DELAY_DATA_PATH.exists():
+        return pd.read_csv(CLEAN_DELAY_DATA_PATH)
+
+    return clean_delay_data(load_delay_dataset(RAW_DELAY_DATA_PATH))
 
 
 def render_home_page() -> None:
@@ -146,19 +168,97 @@ def render_simulation_analytics_page() -> None:
     st.dataframe(passenger_data, use_container_width=True)
 
 
+def _select_options(data: pd.DataFrame, column: str) -> list[str]:
+    """Return sorted text options for a dashboard select box."""
+
+    return sorted(data[column].dropna().astype(str).unique().tolist())
+
+
+def render_prediction_page() -> None:
+    """Render the ML delay prediction page."""
+
+    st.title("ML Prediction")
+
+    model = load_best_model()
+    delay_data = load_clean_delay_data()
+
+    if model is None:
+        st.warning("Best model file is not available. Run ml/train.py first.")
+        return
+
+    with st.form("delay_prediction_form"):
+        col1, col2, col3 = st.columns(3)
+
+        airline = col1.selectbox("Airline", _select_options(delay_data, "airline"))
+        origin_airport = col1.selectbox(
+            "Origin Airport",
+            _select_options(delay_data, "origin_airport"),
+        )
+        destination_airport = col1.selectbox(
+            "Destination Airport",
+            _select_options(delay_data, "destination_airport"),
+        )
+
+        flight_day = col2.selectbox("Flight Day", _select_options(delay_data, "flight_day"))
+        weather_condition = col2.selectbox(
+            "Weather",
+            _select_options(delay_data, "weather_condition"),
+        )
+        scheduled_hour = col2.slider("Scheduled Hour", 0, 23, 14)
+
+        passenger_count = col3.number_input("Passenger Count", 50, 300, 165)
+        previous_delay_minutes = col3.number_input("Previous Delay Minutes", 0, 180, 10)
+        security_wait_minutes = col3.number_input("Security Wait Minutes", 0, 120, 20)
+        gate_changes = col3.number_input("Gate Changes", 0, 5, 0)
+
+        submitted = st.form_submit_button("Predict Delay")
+
+    if submitted:
+        prediction_data = pd.DataFrame(
+            [
+                {
+                    "airline": airline,
+                    "origin_airport": origin_airport,
+                    "destination_airport": destination_airport,
+                    "flight_day": flight_day,
+                    "scheduled_hour": scheduled_hour,
+                    "weather_condition": weather_condition,
+                    "passenger_count": passenger_count,
+                    "previous_delay_minutes": previous_delay_minutes,
+                    "security_wait_minutes": security_wait_minutes,
+                    "gate_changes": gate_changes,
+                }
+            ]
+        )
+
+        prediction = int(model.predict(prediction_data)[0])
+        result_label = "Delayed" if prediction == 1 else "On Time"
+
+        result_col1, result_col2 = st.columns(2)
+        result_col1.metric("Prediction", result_label)
+
+        if hasattr(model, "predict_proba"):
+            delay_probability = model.predict_proba(prediction_data)[0][1]
+            result_col2.metric("Delay Probability", f"{delay_probability:.1%}")
+
+        st.dataframe(prediction_data, use_container_width=True)
+
+
 def main() -> None:
     """Render the selected dashboard page."""
 
     st.sidebar.title("Navigation")
     selected_page = st.sidebar.radio(
         "Go to",
-        ["Home", "Simulation Analytics"],
+        ["Home", "Simulation Analytics", "ML Prediction"],
     )
 
     if selected_page == "Home":
         render_home_page()
     elif selected_page == "Simulation Analytics":
         render_simulation_analytics_page()
+    elif selected_page == "ML Prediction":
+        render_prediction_page()
 
 
 if __name__ == "__main__":
