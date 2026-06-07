@@ -21,7 +21,7 @@ from simulation import (
 )
 from ml.preprocessing import clean_delay_data, load_delay_dataset
 
-RAW_DELAY_DATA_PATH = PROJECT_ROOT / "data" / "raw" / "airline_delay_sample.csv"
+RAW_DELAY_DATA_PATH = PROJECT_ROOT / "data" / "raw" / "airline_delay_realistic.csv"
 CLEAN_DELAY_DATA_PATH = PROJECT_ROOT / "data" / "processed" / "airline_delay_cleaned.csv"
 MODEL_METRICS_PATH = PROJECT_ROOT / "data" / "processed" / "model_metrics.csv"
 BEST_MODEL_PATH = PROJECT_ROOT / "ml" / "models" / "best_delay_model.joblib"
