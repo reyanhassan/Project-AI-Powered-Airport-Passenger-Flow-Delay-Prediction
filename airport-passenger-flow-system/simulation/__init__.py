@@ -3,6 +3,7 @@
 from .airport import Airport
 from .passenger import Passenger
 from .simulation import (
+    SimulationConfig,
     calculate_statistics,
     event_log_to_dataframe,
     passengers_to_dataframe,
@@ -14,6 +15,7 @@ from .simulation import (
 __all__ = [
     "Airport",
     "Passenger",
+    "SimulationConfig",
     "calculate_statistics",
     "event_log_to_dataframe",
     "passengers_to_dataframe",
