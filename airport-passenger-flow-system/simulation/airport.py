@@ -2,6 +2,8 @@
 
 import simpy
 
+from .passenger import Passenger
+
 
 class Airport:
     """Represent shared airport service points in a SimPy environment."""
@@ -28,3 +30,18 @@ class Airport:
             "security_lanes": self.security_lanes.capacity,
             "boarding_gates": self.boarding_gates.capacity,
         }
+
+    def check_in_passenger(self, passenger: Passenger, service_time: float):
+        """Simulate one passenger waiting for and completing check-in."""
+
+        passenger.add_event("joined_check_in_queue", self.env.now)
+        queue_start = self.env.now
+
+        with self.check_in_counters.request() as request:
+            yield request
+            passenger.check_in_wait = self.env.now - queue_start
+            passenger.add_event("started_check_in", self.env.now)
+
+            # The timeout represents the staff member serving this passenger.
+            yield self.env.timeout(service_time)
+            passenger.add_event("finished_check_in", self.env.now)
