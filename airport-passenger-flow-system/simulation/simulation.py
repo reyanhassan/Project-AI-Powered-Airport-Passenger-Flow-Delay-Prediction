@@ -178,7 +178,18 @@ def event_log_to_dataframe(passengers: List[Passenger]) -> pd.DataFrame:
     return pd.DataFrame(event_rows)
 
 
-def calculate_statistics(passengers: List[Passenger]) -> Dict[str, float]:
+def _congestion_level(average_total_wait: float) -> str:
+    """Convert average waiting time into a simple congestion label."""
+
+    if average_total_wait < 5:
+        return "Low"
+    if average_total_wait < 10:
+        return "Medium"
+
+    return "High"
+
+
+def calculate_statistics(passengers: List[Passenger]) -> Dict[str, object]:
     """Calculate beginner-friendly summary statistics from the simulation."""
 
     if not passengers:
@@ -189,21 +200,35 @@ def calculate_statistics(passengers: List[Passenger]) -> Dict[str, float]:
             "average_boarding_wait": 0.0,
             "average_total_wait": 0.0,
             "maximum_total_wait": 0.0,
+            "average_journey_time": 0.0,
+            "maximum_journey_time": 0.0,
+            "busiest_stage": "None",
+            "congestion_level": "Low",
         }
 
     passenger_data = passengers_to_dataframe(passengers)
+    stage_waits = {
+        "Check-in": passenger_data["check_in_wait"].mean(),
+        "Security": passenger_data["security_wait"].mean(),
+        "Boarding": passenger_data["boarding_wait"].mean(),
+    }
+    average_total_wait = round(passenger_data["total_wait"].mean(), 2)
 
     return {
-        "total_passengers": float(len(passenger_data)),
+        "total_passengers": len(passenger_data),
         "average_check_in_wait": round(passenger_data["check_in_wait"].mean(), 2),
         "average_security_wait": round(passenger_data["security_wait"].mean(), 2),
         "average_boarding_wait": round(passenger_data["boarding_wait"].mean(), 2),
-        "average_total_wait": round(passenger_data["total_wait"].mean(), 2),
+        "average_total_wait": average_total_wait,
         "maximum_total_wait": round(passenger_data["total_wait"].max(), 2),
+        "average_journey_time": round(passenger_data["journey_time"].mean(), 2),
+        "maximum_journey_time": round(passenger_data["journey_time"].max(), 2),
+        "busiest_stage": max(stage_waits, key=stage_waits.get),
+        "congestion_level": _congestion_level(average_total_wait),
     }
 
 
-def print_statistics(statistics: Dict[str, float]) -> None:
+def print_statistics(statistics: Dict[str, object]) -> None:
     """Display simulation statistics in the terminal."""
 
     print("\nAirport Passenger Flow Simulation Statistics")
@@ -214,6 +239,10 @@ def print_statistics(statistics: Dict[str, float]) -> None:
     print(f"Average boarding wait: {statistics['average_boarding_wait']} minutes")
     print(f"Average total wait: {statistics['average_total_wait']} minutes")
     print(f"Maximum total wait: {statistics['maximum_total_wait']} minutes")
+    print(f"Average journey time: {statistics['average_journey_time']} minutes")
+    print(f"Maximum journey time: {statistics['maximum_journey_time']} minutes")
+    print(f"Busiest stage: {statistics['busiest_stage']}")
+    print(f"Congestion level: {statistics['congestion_level']}")
 
 
 def save_simulation_outputs(
