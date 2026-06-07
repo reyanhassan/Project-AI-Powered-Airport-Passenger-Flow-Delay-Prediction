@@ -208,7 +208,7 @@ def create_sample_delay_dataset(
                 "weather_condition": weather_condition,
                 "passenger_count": passenger_count,
                 "previous_delay_minutes": previous_delay_minutes,
-                "security_wait_minutes": security_wait,
+                "security_wait_minutes": security_wait_minutes,
                 "gate_changes": gate_changes,
                 "delayed": delayed,
             }
