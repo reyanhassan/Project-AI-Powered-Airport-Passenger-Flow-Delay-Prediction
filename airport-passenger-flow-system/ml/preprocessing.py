@@ -8,6 +8,9 @@ the data into training and testing sets.
 from pathlib import Path
 
 import pandas as pd
+from sklearn.compose import ColumnTransformer
+from sklearn.model_selection import train_test_split
+from sklearn.preprocessing import OneHotEncoder, StandardScaler
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -143,3 +146,59 @@ def save_cleaned_dataset(
     output_path.parent.mkdir(parents=True, exist_ok=True)
     data.to_csv(output_path, index=False)
     return output_path
+
+
+def build_feature_preprocessor() -> ColumnTransformer:
+    """Create the encoder/scaler used before model training.
+
+    OneHotEncoder turns text columns such as airline and weather into numeric
+    columns. StandardScaler keeps numeric columns on a similar scale, which is
+    especially useful for Logistic Regression.
+    """
+
+    return ColumnTransformer(
+        transformers=[
+            ("categorical", OneHotEncoder(handle_unknown="ignore"), CATEGORICAL_COLUMNS),
+            ("numeric", StandardScaler(), NUMERIC_COLUMNS),
+        ]
+    )
+
+
+def split_delay_data(
+    data: pd.DataFrame,
+    test_size: float = 0.2,
+    random_state: int = 42,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series]:
+    """Split cleaned data into training and testing sets."""
+
+    features = data.drop(columns=UNUSED_COLUMNS + [TARGET_COLUMN])
+    target = data[TARGET_COLUMN]
+
+    return train_test_split(
+        features,
+        target,
+        test_size=test_size,
+        random_state=random_state,
+        stratify=target,
+    )
+
+
+def prepare_delay_data(
+    data_path: str | Path = RAW_DATA_PATH,
+    test_size: float = 0.2,
+    random_state: int = 42,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, ColumnTransformer]:
+    """Load, clean, save, split, and prepare the transformer for ML training."""
+
+    raw_data = load_delay_dataset(data_path)
+    cleaned_data = clean_delay_data(raw_data)
+    save_cleaned_dataset(cleaned_data)
+
+    X_train, X_test, y_train, y_test = split_delay_data(
+        cleaned_data,
+        test_size=test_size,
+        random_state=random_state,
+    )
+    preprocessor = build_feature_preprocessor()
+
+    return X_train, X_test, y_train, y_test, preprocessor
