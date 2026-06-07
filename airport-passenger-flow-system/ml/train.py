@@ -5,7 +5,6 @@ from pathlib import Path
 import joblib
 import matplotlib
 import pandas as pd
-import plotly.express as px
 from sklearn.base import clone
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
@@ -183,22 +182,29 @@ def generate_model_comparison_charts(
     plt.savefig(png_path)
     plt.close()
 
-    melted_data = metrics_data.melt(
-        id_vars="model",
-        value_vars=metric_columns,
-        var_name="metric",
-        value_name="score",
-    )
-    figure = px.bar(
-        melted_data,
-        x="model",
-        y="score",
-        color="metric",
-        barmode="group",
-        range_y=[0, 1.05],
-        title="Model Performance Comparison",
-    )
-    figure.write_html(html_path)
+    try:
+        import plotly.express as px
+
+        melted_data = metrics_data.melt(
+            id_vars="model",
+            value_vars=metric_columns,
+            var_name="metric",
+            value_name="score",
+        )
+        figure = px.bar(
+            melted_data,
+            x="model",
+            y="score",
+            color="metric",
+            barmode="group",
+            range_y=[0, 1.05],
+            title="Model Performance Comparison",
+        )
+        figure.write_html(html_path)
+    except ImportError:
+        # This fallback keeps the training script usable before requirements
+        # are installed. After installing Plotly, the same code writes a chart.
+        html_path.write_text(metrics_data.to_html(index=False), encoding="utf-8")
 
     return {
         "matplotlib_chart": png_path,
