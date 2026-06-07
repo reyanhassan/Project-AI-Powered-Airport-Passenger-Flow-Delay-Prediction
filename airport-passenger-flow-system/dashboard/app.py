@@ -6,6 +6,7 @@ from pathlib import Path
 import joblib
 import pandas as pd
 import streamlit as st
+import streamlit.components.v1 as components
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -23,6 +24,8 @@ RAW_DELAY_DATA_PATH = PROJECT_ROOT / "data" / "raw" / "airline_delay_sample.csv"
 CLEAN_DELAY_DATA_PATH = PROJECT_ROOT / "data" / "processed" / "airline_delay_cleaned.csv"
 MODEL_METRICS_PATH = PROJECT_ROOT / "data" / "processed" / "model_metrics.csv"
 BEST_MODEL_PATH = PROJECT_ROOT / "ml" / "models" / "best_delay_model.joblib"
+MODEL_CHART_PNG_PATH = PROJECT_ROOT / "reports" / "model_metrics_comparison.png"
+MODEL_CHART_HTML_PATH = PROJECT_ROOT / "reports" / "model_metrics_comparison.html"
 
 
 st.set_page_config(
@@ -244,13 +247,55 @@ def render_prediction_page() -> None:
         st.dataframe(prediction_data, use_container_width=True)
 
 
+def render_model_performance_page() -> None:
+    """Render model comparison metrics and saved charts."""
+
+    st.title("Model Performance")
+
+    metrics_data = load_csv(MODEL_METRICS_PATH)
+    if metrics_data.empty:
+        st.warning("Model metrics are not available. Run ml/train.py first.")
+        return
+
+    best_row = metrics_data.sort_values(
+        by=["f1_score", "accuracy"],
+        ascending=False,
+    ).iloc[0]
+
+    metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+    metric_col1.metric("Best Model", best_row["model"])
+    metric_col2.metric("Accuracy", f"{best_row['accuracy']:.3f}")
+    metric_col3.metric("Precision", f"{best_row['precision']:.3f}")
+    metric_col4.metric("F1 Score", f"{best_row['f1_score']:.3f}")
+
+    st.subheader("Metric Comparison")
+    metric_columns = ["accuracy", "precision", "recall", "f1_score"]
+    st.bar_chart(metrics_data.set_index("model")[metric_columns])
+
+    chart_col1, chart_col2 = st.columns(2)
+    if MODEL_CHART_PNG_PATH.exists():
+        chart_col1.subheader("Report Chart")
+        chart_col1.image(str(MODEL_CHART_PNG_PATH))
+
+    if MODEL_CHART_HTML_PATH.exists():
+        chart_col2.subheader("Interactive Chart")
+        components.html(
+            MODEL_CHART_HTML_PATH.read_text(encoding="utf-8"),
+            height=460,
+            scrolling=True,
+        )
+
+    st.subheader("Model Metrics Table")
+    st.dataframe(metrics_data, use_container_width=True)
+
+
 def main() -> None:
     """Render the selected dashboard page."""
 
     st.sidebar.title("Navigation")
     selected_page = st.sidebar.radio(
         "Go to",
-        ["Home", "Simulation Analytics", "ML Prediction"],
+        ["Home", "Simulation Analytics", "ML Prediction", "Model Performance"],
     )
 
     if selected_page == "Home":
@@ -259,6 +304,8 @@ def main() -> None:
         render_simulation_analytics_page()
     elif selected_page == "ML Prediction":
         render_prediction_page()
+    elif selected_page == "Model Performance":
+        render_model_performance_page()
 
 
 if __name__ == "__main__":
