@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+
+.env
+.venv/
+venv/
+
+.streamlit/secrets.toml
+
+# Generated when running main.py or the dashboard simulation page.
+data/processed/simulation_event_log.csv
+data/processed/simulation_passenger_summary.csv
