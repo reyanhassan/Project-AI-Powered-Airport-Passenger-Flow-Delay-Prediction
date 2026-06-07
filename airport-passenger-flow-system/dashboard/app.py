@@ -171,6 +171,61 @@ def render_simulation_analytics_page() -> None:
     st.dataframe(passenger_data, use_container_width=True)
 
 
+def render_dataset_analytics_page() -> None:
+    """Render charts from the airline delay dataset."""
+
+    st.title("Dataset Analytics")
+
+    delay_data = load_clean_delay_data()
+    if delay_data.empty:
+        st.warning("Delay dataset is not available.")
+        return
+
+    delay_rate = delay_data["delayed"].mean()
+    peak_hour = int(delay_data["scheduled_hour"].value_counts().idxmax())
+    busiest_airline = delay_data["airline"].value_counts().idxmax()
+
+    metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+    metric_col1.metric("Flights", len(delay_data))
+    metric_col2.metric("Delay Rate", f"{delay_rate:.1%}")
+    metric_col3.metric("Peak Hour", f"{peak_hour}:00")
+    metric_col4.metric("Busiest Airline", busiest_airline)
+
+    chart_col1, chart_col2 = st.columns(2)
+
+    delay_distribution = (
+        delay_data["delayed"]
+        .replace({0: "On Time", 1: "Delayed"})
+        .value_counts()
+        .rename_axis("status")
+        .reset_index(name="flights")
+        .set_index("status")
+    )
+    chart_col1.subheader("Delay Distribution")
+    chart_col1.bar_chart(delay_distribution)
+
+    traffic_by_hour = (
+        delay_data.groupby("scheduled_hour")["passenger_count"]
+        .sum()
+        .rename("passengers")
+        .sort_index()
+    )
+    chart_col2.subheader("Peak Traffic by Hour")
+    chart_col2.line_chart(traffic_by_hour)
+
+    st.subheader("Weather and Delay")
+    weather_delay = (
+        delay_data.groupby("weather_condition")["delayed"]
+        .mean()
+        .sort_values(ascending=False)
+        .rename("delay_rate")
+    )
+    st.bar_chart(weather_delay)
+
+    st.subheader("Cleaned Delay Dataset")
+    st.dataframe(delay_data, use_container_width=True)
+
+
 def _select_options(data: pd.DataFrame, column: str) -> list[str]:
     """Return sorted text options for a dashboard select box."""
 
@@ -295,11 +350,19 @@ def main() -> None:
     st.sidebar.title("Navigation")
     selected_page = st.sidebar.radio(
         "Go to",
-        ["Home", "Simulation Analytics", "ML Prediction", "Model Performance"],
+        [
+            "Home",
+            "Dataset Analytics",
+            "Simulation Analytics",
+            "ML Prediction",
+            "Model Performance",
+        ],
     )
 
     if selected_page == "Home":
         render_home_page()
+    elif selected_page == "Dataset Analytics":
+        render_dataset_analytics_page()
     elif selected_page == "Simulation Analytics":
         render_simulation_analytics_page()
     elif selected_page == "ML Prediction":
