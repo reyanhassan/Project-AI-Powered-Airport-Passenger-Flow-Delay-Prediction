@@ -26,6 +26,34 @@ class SimulationConfig:
     security_service_time: tuple[float, float] = (1.5, 5.0)
     boarding_service_time: tuple[float, float] = (1.0, 3.0)
 
+    def validate(self) -> None:
+        """Raise a clear error when simulation settings are not realistic."""
+
+        if self.num_passengers < 0:
+            raise ValueError("num_passengers must be 0 or greater.")
+        if self.average_arrival_interval <= 0:
+            raise ValueError("average_arrival_interval must be greater than 0.")
+        if self.check_in_counters <= 0:
+            raise ValueError("check_in_counters must be greater than 0.")
+        if self.security_lanes <= 0:
+            raise ValueError("security_lanes must be greater than 0.")
+        if self.boarding_gates <= 0:
+            raise ValueError("boarding_gates must be greater than 0.")
+
+        self._validate_time_range("check_in_service_time", self.check_in_service_time)
+        self._validate_time_range("security_service_time", self.security_service_time)
+        self._validate_time_range("boarding_service_time", self.boarding_service_time)
+
+    @staticmethod
+    def _validate_time_range(name: str, time_range: tuple[float, float]) -> None:
+        """Check that a service-time range has a valid lower and upper limit."""
+
+        minimum, maximum = time_range
+        if minimum <= 0 or maximum <= 0:
+            raise ValueError(f"{name} values must be greater than 0.")
+        if minimum > maximum:
+            raise ValueError(f"{name} minimum cannot be greater than maximum.")
+
 
 def _service_time(rng: random.Random, minimum: float, maximum: float) -> float:
     """Return a random service time between two values."""
@@ -107,6 +135,8 @@ def run_simulation(
             boarding_gates=boarding_gates,
             random_seed=random_seed,
         )
+
+    config.validate()
 
     rng = random.Random(config.random_seed)
     env = simpy.Environment()
