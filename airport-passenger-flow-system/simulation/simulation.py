@@ -1,8 +1,9 @@
 """Main SimPy simulation logic for airport passenger flow."""
 
 import random
-from typing import List
+from typing import Dict, List
 
+import pandas as pd
 import simpy
 
 from .airport import Airport
@@ -102,3 +103,47 @@ def run_simulation(
     env.run()
 
     return passengers
+
+
+def passengers_to_dataframe(passengers: List[Passenger]) -> pd.DataFrame:
+    """Convert passenger objects into a Pandas DataFrame for analysis."""
+
+    return pd.DataFrame([passenger.to_record() for passenger in passengers])
+
+
+def calculate_statistics(passengers: List[Passenger]) -> Dict[str, float]:
+    """Calculate beginner-friendly summary statistics from the simulation."""
+
+    if not passengers:
+        return {
+            "total_passengers": 0,
+            "average_check_in_wait": 0.0,
+            "average_security_wait": 0.0,
+            "average_boarding_wait": 0.0,
+            "average_total_wait": 0.0,
+            "maximum_total_wait": 0.0,
+        }
+
+    passenger_data = passengers_to_dataframe(passengers)
+
+    return {
+        "total_passengers": float(len(passenger_data)),
+        "average_check_in_wait": round(passenger_data["check_in_wait"].mean(), 2),
+        "average_security_wait": round(passenger_data["security_wait"].mean(), 2),
+        "average_boarding_wait": round(passenger_data["boarding_wait"].mean(), 2),
+        "average_total_wait": round(passenger_data["total_wait"].mean(), 2),
+        "maximum_total_wait": round(passenger_data["total_wait"].max(), 2),
+    }
+
+
+def print_statistics(statistics: Dict[str, float]) -> None:
+    """Display simulation statistics in the terminal."""
+
+    print("\nAirport Passenger Flow Simulation Statistics")
+    print("-" * 52)
+    print(f"Total passengers: {int(statistics['total_passengers'])}")
+    print(f"Average check-in wait: {statistics['average_check_in_wait']} minutes")
+    print(f"Average security wait: {statistics['average_security_wait']} minutes")
+    print(f"Average boarding wait: {statistics['average_boarding_wait']} minutes")
+    print(f"Average total wait: {statistics['average_total_wait']} minutes")
+    print(f"Maximum total wait: {statistics['maximum_total_wait']} minutes")
