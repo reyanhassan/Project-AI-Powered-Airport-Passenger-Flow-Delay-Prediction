@@ -19,6 +19,7 @@ class Passenger:
     check_in_wait: float = 0.0
     security_wait: float = 0.0
     boarding_wait: float = 0.0
+    completion_time: float = 0.0
     event_log: List[Dict[str, object]] = field(default_factory=list)
 
     def add_event(self, event_name: str, current_time: float) -> None:
@@ -38,6 +39,14 @@ class Passenger:
 
         return self.check_in_wait + self.security_wait + self.boarding_wait
 
+    def journey_time(self) -> float:
+        """Return total time from airport arrival until boarding is complete."""
+
+        if self.completion_time == 0:
+            return 0.0
+
+        return self.completion_time - self.arrival_time
+
     def to_record(self) -> Dict[str, object]:
         """Convert the passenger data into a row that Pandas can save."""
 
@@ -49,4 +58,6 @@ class Passenger:
             "security_wait": round(self.security_wait, 2),
             "boarding_wait": round(self.boarding_wait, 2),
             "total_wait": round(self.total_wait(), 2),
+            "completion_time": round(self.completion_time, 2),
+            "journey_time": round(self.journey_time(), 2),
         }

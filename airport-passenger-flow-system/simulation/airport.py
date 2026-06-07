@@ -73,4 +73,5 @@ class Airport:
             passenger.add_event("started_boarding", self.env.now)
 
             yield self.env.timeout(service_time)
+            passenger.completion_time = self.env.now
             passenger.add_event("boarded_flight", self.env.now)
