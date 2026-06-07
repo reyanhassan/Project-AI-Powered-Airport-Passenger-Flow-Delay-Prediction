@@ -59,3 +59,18 @@ class Airport:
 
             yield self.env.timeout(service_time)
             passenger.add_event("finished_security", self.env.now)
+
+    def board_flight(self, passenger: Passenger, service_time: float):
+        """Simulate one passenger waiting at the gate and boarding."""
+
+        passenger.add_event("reached_boarding_gate", self.env.now)
+        passenger.add_event("joined_boarding_queue", self.env.now)
+        queue_start = self.env.now
+
+        with self.boarding_gates.request() as request:
+            yield request
+            passenger.boarding_wait = self.env.now - queue_start
+            passenger.add_event("started_boarding", self.env.now)
+
+            yield self.env.timeout(service_time)
+            passenger.add_event("boarded_flight", self.env.now)
