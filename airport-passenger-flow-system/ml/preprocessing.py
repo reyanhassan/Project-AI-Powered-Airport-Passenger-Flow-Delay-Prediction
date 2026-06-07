@@ -226,7 +226,9 @@ def create_sample_delay_dataset(
             if rng.random() < 0.018:
                 row[column] = None
 
-    pd.DataFrame(generated_rows).to_csv(output_path, index=False)
+    temporary_path = output_path.with_suffix(".tmp.csv")
+    pd.DataFrame(generated_rows).to_csv(temporary_path, index=False)
+    temporary_path.replace(output_path)
     return output_path
 
 
