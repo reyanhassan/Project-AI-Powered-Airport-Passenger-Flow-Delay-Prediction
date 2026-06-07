@@ -1,6 +1,7 @@
 """Main SimPy simulation logic for airport passenger flow."""
 
 import random
+from pathlib import Path
 from typing import Dict, List
 
 import pandas as pd
@@ -111,6 +112,16 @@ def passengers_to_dataframe(passengers: List[Passenger]) -> pd.DataFrame:
     return pd.DataFrame([passenger.to_record() for passenger in passengers])
 
 
+def event_log_to_dataframe(passengers: List[Passenger]) -> pd.DataFrame:
+    """Create a detailed event log from every passenger journey."""
+
+    event_rows = []
+    for passenger in passengers:
+        event_rows.extend(passenger.event_log)
+
+    return pd.DataFrame(event_rows)
+
+
 def calculate_statistics(passengers: List[Passenger]) -> Dict[str, float]:
     """Calculate beginner-friendly summary statistics from the simulation."""
 
@@ -147,3 +158,24 @@ def print_statistics(statistics: Dict[str, float]) -> None:
     print(f"Average boarding wait: {statistics['average_boarding_wait']} minutes")
     print(f"Average total wait: {statistics['average_total_wait']} minutes")
     print(f"Maximum total wait: {statistics['maximum_total_wait']} minutes")
+
+
+def save_simulation_outputs(
+    passengers: List[Passenger],
+    output_dir: str | Path = "data/processed",
+) -> dict[str, Path]:
+    """Save passenger summaries and event logs as CSV files."""
+
+    output_path = Path(output_dir)
+    output_path.mkdir(parents=True, exist_ok=True)
+
+    passenger_summary_path = output_path / "simulation_passenger_summary.csv"
+    event_log_path = output_path / "simulation_event_log.csv"
+
+    passengers_to_dataframe(passengers).to_csv(passenger_summary_path, index=False)
+    event_log_to_dataframe(passengers).to_csv(event_log_path, index=False)
+
+    return {
+        "passenger_summary": passenger_summary_path,
+        "event_log": event_log_path,
+    }
