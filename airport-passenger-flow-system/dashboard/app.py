@@ -15,6 +15,7 @@ if str(PROJECT_ROOT) not in sys.path:
 
 from simulation import (
     SimulationConfig,
+    build_live_simulation_data,
     calculate_statistics,
     passengers_to_dataframe,
     run_simulation,
@@ -71,6 +72,81 @@ def load_clean_delay_data() -> pd.DataFrame:
         return pd.read_csv(CLEAN_DELAY_DATA_PATH)
 
     return clean_delay_data(load_delay_dataset(RAW_DELAY_DATA_PATH))
+
+
+@st.cache_data
+def load_live_airport_data(
+    passengers: int,
+    arrival_interval: float,
+    random_seed: int,
+) -> dict[str, object]:
+    """Run a dashboard-sized live simulation and cache the results."""
+
+    config = SimulationConfig(
+        num_passengers=passengers,
+        average_arrival_interval=arrival_interval,
+        check_in_counters=3,
+        security_lanes=2,
+        boarding_gates=2,
+        random_seed=random_seed,
+    )
+    return build_live_simulation_data(config=config, frame_count=28)
+
+
+def render_airport_dashboard_css() -> None:
+    """Apply airport-control-screen styling to the live simulation page."""
+
+    st.markdown(
+        """
+        <style>
+        .airport-screen {
+            background: #071018;
+            border: 1px solid #1d3b53;
+            border-radius: 8px;
+            padding: 18px;
+            color: #eef7ff;
+            box-shadow: 0 0 0 1px rgba(88, 166, 255, 0.15);
+        }
+        .airport-title {
+            color: #8fd3ff;
+            font-size: 34px;
+            font-weight: 800;
+            letter-spacing: 0;
+            margin-bottom: 6px;
+        }
+        .airport-subtitle {
+            color: #93a4b7;
+            font-size: 15px;
+            margin-bottom: 18px;
+        }
+        .airport-zone {
+            background: #0d1b26;
+            border: 1px solid #21415c;
+            border-radius: 8px;
+            padding: 14px;
+            min-height: 110px;
+        }
+        .airport-zone h4 {
+            color: #cbeaff;
+            font-size: 17px;
+            margin: 0 0 10px 0;
+            letter-spacing: 0;
+        }
+        .airport-zone-value {
+            color: #ffffff;
+            font-size: 30px;
+            font-weight: 800;
+            line-height: 1.15;
+        }
+        .airport-zone-label {
+            color: #9eb1c5;
+            font-size: 13px;
+            margin-top: 4px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
 
 
 def get_dashboard_delay_data(uploaded_file) -> tuple[pd.DataFrame, str, bool, str]:
@@ -436,6 +512,61 @@ def render_model_performance_page() -> None:
     st.dataframe(metrics_data, use_container_width=True)
 
 
+def render_airport_live_simulation_page() -> None:
+    """Render a visual airport operations dashboard."""
+
+    render_airport_dashboard_css()
+    st.markdown(
+        """
+        <div class="airport-screen">
+            <div class="airport-title">Airport Live Simulation</div>
+            <div class="airport-subtitle">Passenger flow, gate activity, and flight delay operations</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    control_col1, control_col2, control_col3 = st.columns(3)
+    passengers = control_col1.slider("Live Passengers", 30, 180, 90, 10)
+    arrival_interval = control_col2.slider("Arrival Gap", 0.8, 5.0, 2.0, 0.2)
+    random_seed = control_col3.number_input("Live Seed", min_value=1, value=42)
+
+    live_data = load_live_airport_data(passengers, arrival_interval, int(random_seed))
+    statistics = live_data["statistics"]
+    queue_timeline = live_data["queue_timeline"]
+    flight_delay_data = live_data["flight_delay_data"]
+
+    latest_queue = queue_timeline.iloc[-1]
+    delayed_flights = int((flight_delay_data["status"] == "Delayed").sum())
+
+    st.markdown("### Operations Overview")
+    overview_cols = st.columns(5)
+    overview_values = [
+        ("Passenger Arrival", statistics["total_passengers"], "simulated passengers"),
+        ("Check-in Counters", "3", "active counters"),
+        ("Security Checkpoints", "2", "active lanes"),
+        ("Boarding Gates", "A1 / A2", "boarding positions"),
+        ("Flight Status Screen", delayed_flights, "delayed flights"),
+    ]
+
+    for column, (title, value, label) in zip(overview_cols, overview_values):
+        column.markdown(
+            f"""
+            <div class="airport-zone">
+                <h4>{title}</h4>
+                <div class="airport-zone-value">{value}</div>
+                <div class="airport-zone-label">{label}</div>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    st.caption(
+        f"Latest total queue: {int(latest_queue['total_queue'])} passengers | "
+        f"Average total wait: {statistics['average_total_wait']} minutes"
+    )
+
+
 def main() -> None:
     """Render the selected dashboard page."""
 
@@ -455,6 +586,7 @@ def main() -> None:
             "Home",
             "Dataset Analytics",
             "Simulation Analytics",
+            "Airport Live Simulation",
             "ML Prediction",
             "Model Performance",
         ],
@@ -466,6 +598,8 @@ def main() -> None:
         render_dataset_analytics_page(uploaded_file)
     elif selected_page == "Simulation Analytics":
         render_simulation_analytics_page()
+    elif selected_page == "Airport Live Simulation":
+        render_airport_live_simulation_page()
     elif selected_page == "ML Prediction":
         render_prediction_page(uploaded_file)
     elif selected_page == "Model Performance":
