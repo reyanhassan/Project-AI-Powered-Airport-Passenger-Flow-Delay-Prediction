@@ -73,7 +73,7 @@ def build_advanced_airport_html() -> str:
   }
   .metric-grid {
     display: grid;
-    grid-template-columns: repeat(6, minmax(0, 1fr));
+    grid-template-columns: repeat(7, minmax(0, 1fr));
     gap: 10px;
     margin-bottom: 16px;
   }
@@ -205,6 +205,59 @@ def build_advanced_airport_html() -> str:
     font-size: 13px;
     line-height: 1.5;
   }
+  .flight-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+  .flight-table th {
+    color: var(--neon);
+    background: rgba(56, 197, 255, 0.08);
+    text-align: left;
+    padding: 8px 6px;
+    border-bottom: 1px solid rgba(56, 197, 255, 0.24);
+  }
+  .flight-table td {
+    padding: 8px 6px;
+    border-bottom: 1px solid rgba(56, 197, 255, 0.12);
+    color: var(--text);
+  }
+  .flight-badge {
+    display: inline-block;
+    border-radius: 5px;
+    padding: 3px 7px;
+    min-width: 78px;
+    text-align: center;
+    font-size: 10px;
+    font-weight: 900;
+  }
+  .status-on-time { background: var(--green); color: #02120a; }
+  .status-delayed { background: var(--red); color: #fff; }
+  .status-boarding { background: var(--blue); color: #fff; }
+  .status-gate-closed { background: var(--yellow); color: #071018; }
+  .status-departed { background: var(--gray); color: #fff; }
+  .event-log {
+    height: 254px;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column-reverse;
+    gap: 6px;
+    padding-right: 4px;
+  }
+  .event-item {
+    border-left: 3px solid var(--neon);
+    background: rgba(56, 197, 255, 0.08);
+    border-radius: 6px;
+    padding: 7px 8px;
+    color: #dff6ff;
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .event-time {
+    color: var(--yellow);
+    font-weight: 900;
+    margin-right: 6px;
+  }
   .passenger {
     position: absolute;
     left: 0;
@@ -264,6 +317,7 @@ def build_advanced_airport_html() -> str:
       <div class="metric-card"><div class="metric-label">Lounge</div><div class="metric-value" id="metric-lounge">0</div></div>
       <div class="metric-card"><div class="metric-label">Boarded</div><div class="metric-value" id="metric-boarded">0</div></div>
       <div class="metric-card"><div class="metric-label">Avg Wait</div><div class="metric-value" id="metric-wait">0m</div></div>
+      <div class="metric-card"><div class="metric-label">Delayed Flights</div><div class="metric-value" id="metric-delayed">0</div></div>
     </div>
 
     <div class="main-grid">
@@ -283,11 +337,23 @@ def build_advanced_airport_html() -> str:
       <aside class="side-panel">
         <section class="panel">
           <div class="panel-title">Digital Flight Board</div>
-          <div class="placeholder-text">Flight board will activate with simulation data.</div>
+          <table class="flight-table">
+            <thead>
+              <tr>
+                <th>Flight</th>
+                <th>Destination</th>
+                <th>Gate</th>
+                <th>Sched</th>
+                <th>Est</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="flight-board-body"></tbody>
+          </table>
         </section>
         <section class="panel">
           <div class="panel-title">Live Event Log</div>
-          <div class="placeholder-text">Passenger events will stream here during animation.</div>
+          <div class="event-log" id="event-log"></div>
         </section>
       </aside>
     </div>
@@ -300,15 +366,26 @@ def build_advanced_airport_html() -> str:
     delayProbability: 0.28,
     autoStart: true
   };
+  const flights = [
+    { flight: "PK-302", destination: "Karachi", gate: "A1", scheduled: "09:20", estimate: "09:32", status: "DELAYED", delay: 12 },
+    { flight: "PA-117", destination: "Lahore", gate: "A2", scheduled: "09:45", estimate: "09:45", status: "BOARDING", delay: 0 },
+    { flight: "ER-640", destination: "Dubai", gate: "B1", scheduled: "10:05", estimate: "10:05", status: "ON TIME", delay: 0 },
+    { flight: "QR-811", destination: "Doha", gate: "B2", scheduled: "10:25", estimate: "10:25", status: "GATE CLOSED", delay: 0 },
+    { flight: "TK-905", destination: "Istanbul", gate: "C1", scheduled: "10:50", estimate: "11:08", status: "DELAYED", delay: 18 },
+    { flight: "EK-615", destination: "Dubai", gate: "C2", scheduled: "11:10", estimate: "11:10", status: "DEPARTED", delay: 0 }
+  ];
 
   const map = document.getElementById("airport-map");
+  const flightBoardBody = document.getElementById("flight-board-body");
+  const eventLog = document.getElementById("event-log");
   const metrics = {
     total: document.getElementById("metric-total"),
     checkin: document.getElementById("metric-checkin"),
     security: document.getElementById("metric-security"),
     lounge: document.getElementById("metric-lounge"),
     boarded: document.getElementById("metric-boarded"),
-    wait: document.getElementById("metric-wait")
+    wait: document.getElementById("metric-wait"),
+    delayed: document.getElementById("metric-delayed")
   };
   const points = {
     entrance: { x: 82, y: 306 },
@@ -397,10 +474,54 @@ def build_advanced_airport_html() -> str:
         index,
         delay: index * 0.55,
         waitOffset: 2 + (index % 7) * 0.42,
-        element
+        element,
+        lastPhase: ""
       });
     }
     return passengers;
+  }
+
+  function statusClass(status) {
+    return `status-${status.toLowerCase().replaceAll(" ", "-")}`;
+  }
+
+  function renderFlightBoard() {
+    flightBoardBody.innerHTML = flights.map((flight) => `
+      <tr>
+        <td>${flight.flight}</td>
+        <td>${flight.destination}</td>
+        <td>${flight.gate}</td>
+        <td>${flight.scheduled}</td>
+        <td>${flight.estimate}</td>
+        <td><span class="flight-badge ${statusClass(flight.status)}">${flight.status}</span></td>
+      </tr>
+    `).join("");
+    metrics.delayed.textContent = String(flights.filter((flight) => flight.status === "DELAYED").length);
+  }
+
+  function addEvent(message, elapsed) {
+    const item = document.createElement("div");
+    item.className = "event-item";
+    item.innerHTML = `<span class="event-time">${Math.max(elapsed, 0).toFixed(1)}m</span>${message}`;
+    eventLog.prepend(item);
+    while (eventLog.children.length > 22) eventLog.removeChild(eventLog.lastChild);
+  }
+
+  function eventForPhase(passengerId, phaseName) {
+    const counterNumber = (Number(passengerId.slice(1)) % 3) + 1;
+    const laneNumber = (Number(passengerId.slice(1)) % 2) + 1;
+    const gateName = Number(passengerId.slice(1)) % 2 === 0 ? "A2" : "A1";
+    const messages = {
+      entrance: `Passenger ${passengerId} entered airport`,
+      checkin: `Passenger ${passengerId} reached check-in queue`,
+      counter: `Counter ${counterNumber} serving ${passengerId}`,
+      security: `Passenger ${passengerId} reached security queue`,
+      lane: `Passenger ${passengerId} cleared security at Lane ${laneNumber}`,
+      lounge: `Passenger ${passengerId} entered waiting lounge`,
+      gate: `Passenger ${passengerId} waiting at Gate ${gateName}`,
+      boarded: `Passenger ${passengerId} boarded flight`
+    };
+    return messages[phaseName] || `Passenger ${passengerId} moving`;
   }
 
   function createStaticQueueDots() {
@@ -433,6 +554,10 @@ def build_advanced_airport_html() -> str:
   function startAnimation() {
     const passengers = createPassengers();
     createStaticQueueDots();
+    renderFlightBoard();
+    flights.filter((flight) => flight.status === "DELAYED").forEach((flight) => {
+      addEvent(`Flight ${flight.flight} delayed by ${flight.delay} minutes`, 0);
+    });
     const startTime = performance.now();
 
     function tick(now) {
@@ -452,6 +577,11 @@ def build_advanced_airport_html() -> str:
         const { phase, position } = state;
         passenger.element.style.transform = `translate(${position.x}px, ${position.y}px)`;
         passenger.element.classList.toggle("boarded", phase.name === "boarded");
+
+        if (phase.name !== passenger.lastPhase) {
+          passenger.lastPhase = phase.name;
+          addEvent(eventForPhase(passenger.id, phase.name), elapsed);
+        }
 
         if (["checkin", "counter"].includes(phase.name)) counts.checkin += 1;
         if (["security", "lane"].includes(phase.name)) counts.security += 1;
