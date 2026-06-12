@@ -12,6 +12,8 @@ import plotly.express as px
 import streamlit as st
 import streamlit.components.v1 as components
 
+from advanced_airport import render_advanced_animated_airport_page
+
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
@@ -1043,6 +1045,7 @@ def main() -> None:
             "Dataset Analytics",
             "Simulation Analytics",
             "Airport Live Simulation",
+            "Advanced Animated Airport",
             "ML Prediction",
             "Model Performance",
         ],
@@ -1056,6 +1059,8 @@ def main() -> None:
         render_simulation_analytics_page()
     elif selected_page == "Airport Live Simulation":
         render_airport_live_simulation_page()
+    elif selected_page == "Advanced Animated Airport":
+        render_advanced_animated_airport_page()
     elif selected_page == "ML Prediction":
         render_prediction_page(uploaded_file)
     elif selected_page == "Model Performance":
