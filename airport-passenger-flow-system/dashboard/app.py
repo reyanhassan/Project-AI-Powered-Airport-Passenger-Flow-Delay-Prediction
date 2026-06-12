@@ -143,6 +143,47 @@ def render_airport_dashboard_css() -> None:
             font-size: 13px;
             margin-top: 4px;
         }
+        .airport-card {
+            background: #0b1822;
+            border: 1px solid #23455f;
+            border-radius: 8px;
+            padding: 14px;
+            min-height: 156px;
+        }
+        .airport-card-title {
+            color: #d8f1ff;
+            font-size: 18px;
+            font-weight: 800;
+            margin-bottom: 10px;
+        }
+        .airport-card-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            color: #b9c7d6;
+            font-size: 13px;
+            margin: 7px 0;
+        }
+        .airport-card-value {
+            color: #ffffff;
+            font-weight: 700;
+            text-align: right;
+        }
+        .status-badge {
+            display: inline-block;
+            border-radius: 6px;
+            padding: 4px 9px;
+            color: #06101a;
+            font-size: 12px;
+            font-weight: 800;
+            margin-top: 8px;
+        }
+        .status-open {
+            background: #47d16c;
+        }
+        .status-busy {
+            background: #f5b84b;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -512,6 +553,160 @@ def render_model_performance_page() -> None:
     st.dataframe(metrics_data, use_container_width=True)
 
 
+def _split_count(total: int, slots: int) -> list[int]:
+    """Split a queue length across multiple station cards."""
+
+    base_count = total // slots
+    remainder = total % slots
+    return [base_count + (1 if index < remainder else 0) for index in range(slots)]
+
+
+def _active_passengers(
+    event_log: pd.DataFrame,
+    start_event: str,
+    end_event: str,
+    current_time: float,
+    limit: int,
+) -> list[str]:
+    """Find passenger IDs being served at a station at the current frame."""
+
+    active_passengers = []
+    if event_log.empty:
+        return active_passengers
+
+    for passenger_id, passenger_events in event_log.groupby("passenger_id"):
+        event_times = dict(zip(passenger_events["event"], passenger_events["time"]))
+        start_time = event_times.get(start_event)
+        end_time = event_times.get(end_event)
+
+        if start_time is None or end_time is None:
+            continue
+        if start_time <= current_time < end_time:
+            active_passengers.append(f"P{int(passenger_id):03d}")
+        if len(active_passengers) == limit:
+            break
+
+    return active_passengers
+
+
+def render_station_card(
+    title: str,
+    queue_length: int,
+    active_passenger: str,
+    average_wait: float,
+    completion_time: str | None = None,
+) -> None:
+    """Render one airport operations card."""
+
+    status = "Busy" if active_passenger != "None" else "Open"
+    status_class = "status-busy" if status == "Busy" else "status-open"
+    completion_row = ""
+
+    if completion_time is not None:
+        completion_row = f"""
+            <div class="airport-card-row">
+                <span>Completion</span>
+                <span class="airport-card-value">{completion_time}</span>
+            </div>
+        """
+
+    st.markdown(
+        f"""
+        <div class="airport-card">
+            <div class="airport-card-title">{title}</div>
+            <div class="airport-card-row">
+                <span>Queue length</span>
+                <span class="airport-card-value">{queue_length}</span>
+            </div>
+            <div class="airport-card-row">
+                <span>Serving</span>
+                <span class="airport-card-value">{active_passenger}</span>
+            </div>
+            <div class="airport-card-row">
+                <span>Average wait</span>
+                <span class="airport-card-value">{average_wait:.2f} min</span>
+            </div>
+            {completion_row}
+            <span class="status-badge {status_class}">{status}</span>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def render_airport_station_cards(
+    live_data: dict[str, object],
+    frame_index: int,
+) -> None:
+    """Render check-in, security, and boarding station cards."""
+
+    event_log = live_data["event_log"]
+    queue_timeline = live_data["queue_timeline"]
+    statistics = live_data["statistics"]
+    current_row = queue_timeline.iloc[frame_index]
+    current_time = float(current_row["time"])
+
+    check_in_active = _active_passengers(
+        event_log,
+        "started_check_in",
+        "finished_check_in",
+        current_time,
+        3,
+    )
+    security_active = _active_passengers(
+        event_log,
+        "started_security",
+        "finished_security",
+        current_time,
+        2,
+    )
+    boarding_active = _active_passengers(
+        event_log,
+        "started_boarding",
+        "boarded_flight",
+        current_time,
+        2,
+    )
+
+    st.markdown("### Check-in Counters")
+    check_in_queues = _split_count(int(current_row["check_in_queue"]), 3)
+    check_in_cols = st.columns(3)
+    for index, column in enumerate(check_in_cols):
+        with column:
+            render_station_card(
+                f"Counter {index + 1}",
+                check_in_queues[index],
+                check_in_active[index] if index < len(check_in_active) else "None",
+                float(statistics["average_check_in_wait"]),
+            )
+
+    st.markdown("### Security Checkpoints")
+    security_queues = _split_count(int(current_row["security_queue"]), 2)
+    security_cols = st.columns(2)
+    for index, column in enumerate(security_cols):
+        with column:
+            render_station_card(
+                f"Lane {index + 1}",
+                security_queues[index],
+                security_active[index] if index < len(security_active) else "None",
+                float(statistics["average_security_wait"]),
+            )
+
+    st.markdown("### Boarding Gates")
+    boarding_queues = _split_count(int(current_row["boarding_queue"]), 2)
+    gate_cols = st.columns(2)
+    for index, column in enumerate(gate_cols):
+        estimated_minutes = current_time + boarding_queues[index] * 1.7
+        with column:
+            render_station_card(
+                f"Gate A{index + 1}",
+                boarding_queues[index],
+                boarding_active[index] if index < len(boarding_active) else "None",
+                float(statistics["average_boarding_wait"]),
+                completion_time=f"{estimated_minutes:.1f} min",
+            )
+
+
 def render_airport_live_simulation_page() -> None:
     """Render a visual airport operations dashboard."""
 
@@ -565,6 +760,9 @@ def render_airport_live_simulation_page() -> None:
         f"Latest total queue: {int(latest_queue['total_queue'])} passengers | "
         f"Average total wait: {statistics['average_total_wait']} minutes"
     )
+
+    default_frame = min(int(len(queue_timeline) * 0.6), len(queue_timeline) - 1)
+    render_airport_station_cards(live_data, default_frame)
 
 
 def main() -> None:
