@@ -1,13 +1,29 @@
 """Advanced animated airport simulation page for the Streamlit dashboard."""
 
+import json
+
 import streamlit as st
 import streamlit.components.v1 as components
 
 
-def build_advanced_airport_html() -> str:
+def build_advanced_airport_html(
+    passenger_count: int,
+    animation_speed: float,
+    delay_probability: float,
+    auto_start: bool,
+    run_token: int,
+) -> str:
     """Build the custom HTML/CSS airport map component."""
 
-    return """
+    component_config = {
+        "passengerCount": passenger_count,
+        "speed": animation_speed,
+        "delayProbability": delay_probability,
+        "autoStart": auto_start,
+        "seedToken": run_token,
+    }
+
+    html_template = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -360,13 +376,8 @@ def build_advanced_airport_html() -> str:
   </div>
 <script>
 (() => {
-  const config = {
-    passengerCount: 36,
-    speed: 1.0,
-    delayProbability: 0.28,
-    autoStart: true
-  };
-  const flights = [
+  const config = __CONFIG__;
+  const baseFlights = [
     { flight: "PK-302", destination: "Karachi", gate: "A1", scheduled: "09:20", estimate: "09:32", status: "DELAYED", delay: 12 },
     { flight: "PA-117", destination: "Lahore", gate: "A2", scheduled: "09:45", estimate: "09:45", status: "BOARDING", delay: 0 },
     { flight: "ER-640", destination: "Dubai", gate: "B1", scheduled: "10:05", estimate: "10:05", status: "ON TIME", delay: 0 },
@@ -374,6 +385,15 @@ def build_advanced_airport_html() -> str:
     { flight: "TK-905", destination: "Istanbul", gate: "C1", scheduled: "10:50", estimate: "11:08", status: "DELAYED", delay: 18 },
     { flight: "EK-615", destination: "Dubai", gate: "C2", scheduled: "11:10", estimate: "11:10", status: "DEPARTED", delay: 0 }
   ];
+  const flights = baseFlights.map((flight, index) => {
+    if (["DEPARTED", "GATE CLOSED"].includes(flight.status)) return { ...flight };
+    const score = (index * 23 + config.seedToken * 17 + 31) % 100;
+    if (score < Math.round(config.delayProbability * 100)) {
+      const delay = 8 + ((index * 7 + config.seedToken * 3) % 28);
+      return { ...flight, status: "DELAYED", delay, estimate: addMinutes(flight.scheduled, delay) };
+    }
+    return { ...flight, status: flight.status === "DELAYED" ? "ON TIME" : flight.status, delay: 0, estimate: flight.scheduled };
+  });
 
   const map = document.getElementById("airport-map");
   const flightBoardBody = document.getElementById("flight-board-body");
@@ -419,6 +439,12 @@ def build_advanced_airport_html() -> str:
       x: start.x + (end.x - start.x) * curved,
       y: start.y + (end.y - start.y) * curved
     };
+  }
+
+  function addMinutes(timeText, minutesToAdd) {
+    const [hours, minutes] = timeText.split(":").map(Number);
+    const totalMinutes = hours * 60 + minutes + minutesToAdd;
+    return `${String(Math.floor(totalMinutes / 60)).padStart(2, "0")}:${String(totalMinutes % 60).padStart(2, "0")}`;
   }
 
   function queuePosition(queueName, passengerIndex) {
@@ -597,15 +623,53 @@ def build_advanced_airport_html() -> str:
     requestAnimationFrame(tick);
   }
 
-  if (config.autoStart) startAnimation();
+  renderFlightBoard();
+  if (config.autoStart) {
+    startAnimation();
+  } else {
+    updateMetrics({ checkin: 0, security: 0, lounge: 0, boarded: 0 }, 0);
+    addEvent("Press Start Advanced Simulation to begin passenger movement", 0);
+  }
 })();
 </script>
 </body>
 </html>
 """
+    return html_template.replace("__CONFIG__", json.dumps(component_config))
 
 
 def render_advanced_animated_airport_page() -> None:
     """Render the advanced animated airport simulation page."""
 
-    components.html(build_advanced_airport_html(), height=900, scrolling=True)
+    st.markdown("## Advanced Animated Airport")
+
+    if "advanced_airport_started" not in st.session_state:
+        st.session_state.advanced_airport_started = False
+    if "advanced_airport_token" not in st.session_state:
+        st.session_state.advanced_airport_token = 1
+
+    control_col1, control_col2, control_col3 = st.columns(3)
+    passenger_count = control_col1.slider("Number of passengers", 10, 120, 42, 1)
+    animation_speed = control_col2.slider("Animation speed", 0.5, 3.0, 1.2, 0.1)
+    delay_probability = control_col3.slider("Delay probability", 0, 80, 28, 1) / 100
+
+    button_col1, button_col2, _ = st.columns([1, 1, 4])
+    if button_col1.button("Start Advanced Simulation", type="primary"):
+        st.session_state.advanced_airport_started = True
+        st.session_state.advanced_airport_token += 1
+
+    if button_col2.button("Reset"):
+        st.session_state.advanced_airport_started = False
+        st.session_state.advanced_airport_token += 1
+
+    components.html(
+        build_advanced_airport_html(
+            passenger_count=passenger_count,
+            animation_speed=animation_speed,
+            delay_probability=delay_probability,
+            auto_start=st.session_state.advanced_airport_started,
+            run_token=st.session_state.advanced_airport_token,
+        ),
+        height=930,
+        scrolling=True,
+    )
