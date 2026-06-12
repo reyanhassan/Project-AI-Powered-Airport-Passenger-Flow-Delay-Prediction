@@ -997,6 +997,19 @@ def render_airport_live_simulation_page() -> None:
                     )
                 )
             time.sleep(0.18)
+
+        final_frame = len(queue_timeline) - 1
+        live_placeholder.empty()
+        with live_placeholder.container():
+            render_live_frame_header(live_data, final_frame)
+            render_airport_station_cards(live_data, final_frame)
+            render_flight_information_screen(
+                flight_screen_for_frame(
+                    flight_delay_data,
+                    final_frame,
+                    len(queue_timeline),
+                )
+            )
     else:
         with live_placeholder.container():
             render_live_frame_header(live_data, default_frame)
