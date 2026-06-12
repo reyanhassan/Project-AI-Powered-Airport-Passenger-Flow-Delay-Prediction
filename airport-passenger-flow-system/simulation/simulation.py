@@ -178,6 +178,177 @@ def event_log_to_dataframe(passengers: List[Passenger]) -> pd.DataFrame:
     return pd.DataFrame(event_rows)
 
 
+def _event_time(passenger: Passenger, event_name: str) -> float:
+    """Return the timestamp for a passenger event, or 0 when it is missing."""
+
+    for event in passenger.event_log:
+        if event["event"] == event_name:
+            return float(event["time"])
+
+    return 0.0
+
+
+def build_queue_timeline(
+    passengers: List[Passenger],
+    frame_count: int = 24,
+) -> pd.DataFrame:
+    """Build queue length snapshots for dashboard charts and animation."""
+
+    if not passengers:
+        return pd.DataFrame(
+            columns=[
+                "time",
+                "arrival_queue",
+                "check_in_queue",
+                "security_queue",
+                "boarding_queue",
+                "total_queue",
+            ]
+        )
+
+    max_time = max(passenger.completion_time for passenger in passengers)
+    time_points = [
+        round((max_time / max(frame_count - 1, 1)) * index, 2)
+        for index in range(frame_count)
+    ]
+    timeline_rows = []
+
+    for current_time in time_points:
+        arrival_queue = sum(
+            1
+            for passenger in passengers
+            if passenger.arrival_time <= current_time
+            and _event_time(passenger, "started_check_in") > current_time
+        )
+        check_in_queue = sum(
+            1
+            for passenger in passengers
+            if _event_time(passenger, "joined_check_in_queue") <= current_time
+            < _event_time(passenger, "started_check_in")
+        )
+        security_queue = sum(
+            1
+            for passenger in passengers
+            if _event_time(passenger, "joined_security_queue") <= current_time
+            < _event_time(passenger, "started_security")
+        )
+        boarding_queue = sum(
+            1
+            for passenger in passengers
+            if _event_time(passenger, "joined_boarding_queue") <= current_time
+            < _event_time(passenger, "started_boarding")
+        )
+
+        timeline_rows.append(
+            {
+                "time": current_time,
+                "arrival_queue": arrival_queue,
+                "check_in_queue": check_in_queue,
+                "security_queue": security_queue,
+                "boarding_queue": boarding_queue,
+                "total_queue": check_in_queue + security_queue + boarding_queue,
+            }
+        )
+
+    return pd.DataFrame(timeline_rows)
+
+
+def build_stage_wait_times(passengers: List[Passenger]) -> pd.DataFrame:
+    """Return average wait time by airport stage."""
+
+    statistics = calculate_statistics(passengers)
+
+    return pd.DataFrame(
+        [
+            {
+                "stage": "Check-in",
+                "average_wait_minutes": statistics["average_check_in_wait"],
+            },
+            {
+                "stage": "Security",
+                "average_wait_minutes": statistics["average_security_wait"],
+            },
+            {
+                "stage": "Boarding",
+                "average_wait_minutes": statistics["average_boarding_wait"],
+            },
+        ]
+    )
+
+
+def build_flight_delay_data(
+    passengers: List[Passenger],
+    random_seed: int = 42,
+) -> pd.DataFrame:
+    """Create flight screen rows influenced by current simulation pressure."""
+
+    rng = random.Random(random_seed)
+    destinations = ["Karachi", "Lahore", "Islamabad", "Dubai", "Doha", "London"]
+    status_values = ["On Time", "Delayed", "Boarding", "Gate Closed", "Departed"]
+    status_weights = [0.35, 0.25, 0.18, 0.08, 0.14]
+    passenger_data = passengers_to_dataframe(passengers)
+    average_total_wait = (
+        passenger_data["total_wait"].mean() if not passenger_data.empty else 0.0
+    )
+
+    rows = []
+    for index, destination in enumerate(destinations, start=1):
+        scheduled_minutes = 8 * 60 + index * 45
+        delay_pressure = max(0, int(average_total_wait * 1.8))
+        delay_minutes = max(0, int(rng.gauss(delay_pressure, 18)))
+        status = rng.choices(status_values, weights=status_weights, k=1)[0]
+
+        if delay_minutes >= 25:
+            status = "Delayed"
+        elif index == 3:
+            status = "Boarding"
+        elif index == 6:
+            status = "Departed"
+
+        estimated_minutes = scheduled_minutes + delay_minutes
+        rows.append(
+            {
+                "flight_number": f"AP{200 + index}",
+                "destination": destination,
+                "scheduled_time": f"{scheduled_minutes // 60:02d}:{scheduled_minutes % 60:02d}",
+                "estimated_time": f"{estimated_minutes // 60:02d}:{estimated_minutes % 60:02d}",
+                "status": status,
+                "delay_minutes": delay_minutes,
+                "passengers_waiting": rng.randint(35, 170),
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def build_live_simulation_data(
+    config: SimulationConfig | None = None,
+    frame_count: int = 24,
+) -> dict[str, object]:
+    """Run the simulation and return data used by the live airport dashboard."""
+
+    if config is None:
+        config = SimulationConfig(num_passengers=90, random_seed=42)
+
+    passengers = run_simulation(config=config)
+    passenger_data = passengers_to_dataframe(passengers)
+    event_log = event_log_to_dataframe(passengers)
+    statistics = calculate_statistics(passengers)
+
+    return {
+        "passengers": passengers,
+        "passenger_data": passenger_data,
+        "event_log": event_log,
+        "statistics": statistics,
+        "queue_timeline": build_queue_timeline(passengers, frame_count=frame_count),
+        "stage_wait_times": build_stage_wait_times(passengers),
+        "flight_delay_data": build_flight_delay_data(
+            passengers,
+            random_seed=config.random_seed,
+        ),
+    }
+
+
 def _congestion_level(average_total_wait: float) -> str:
     """Convert average waiting time into a simple congestion label."""
 
