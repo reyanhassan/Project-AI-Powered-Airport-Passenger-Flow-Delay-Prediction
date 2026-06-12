@@ -2,6 +2,7 @@
 
 from io import BytesIO
 import sys
+import time
 from pathlib import Path
 
 import joblib
@@ -810,6 +811,47 @@ def render_flight_information_screen(flight_delay_data: pd.DataFrame) -> None:
     )
 
 
+def flight_screen_for_frame(
+    flight_delay_data: pd.DataFrame,
+    frame_index: int,
+    frame_count: int,
+) -> pd.DataFrame:
+    """Return flight statuses adjusted for the current animation frame."""
+
+    animated_flights = flight_delay_data.copy()
+    progress = frame_index / max(frame_count - 1, 1)
+
+    if progress < 0.25:
+        animated_flights.loc[
+            animated_flights["status"].isin(["Boarding", "Gate Closed", "Departed"]),
+            "status",
+        ] = "On Time"
+    elif progress < 0.55:
+        animated_flights.loc[animated_flights.index[:2], "status"] = "Boarding"
+    elif progress < 0.80:
+        animated_flights.loc[animated_flights.index[:2], "status"] = "Gate Closed"
+    else:
+        animated_flights.loc[animated_flights.index[:2], "status"] = "Departed"
+
+    delayed_mask = animated_flights["delay_minutes"] >= 25
+    animated_flights.loc[delayed_mask, "status"] = "Delayed"
+
+    return animated_flights
+
+
+def render_live_frame_header(live_data: dict[str, object], frame_index: int) -> None:
+    """Render compact frame-level metrics above the animated cards."""
+
+    queue_timeline = live_data["queue_timeline"]
+    current_row = queue_timeline.iloc[frame_index]
+
+    frame_col1, frame_col2, frame_col3, frame_col4 = st.columns(4)
+    frame_col1.metric("Simulation Time", f"{current_row['time']:.1f} min")
+    frame_col2.metric("Check-in Queue", int(current_row["check_in_queue"]))
+    frame_col3.metric("Security Queue", int(current_row["security_queue"]))
+    frame_col4.metric("Boarding Queue", int(current_row["boarding_queue"]))
+
+
 def render_airport_delay_charts(live_data: dict[str, object]) -> None:
     """Render Plotly charts for airport delay and queue behavior."""
 
@@ -938,8 +980,35 @@ def render_airport_live_simulation_page() -> None:
     )
 
     default_frame = min(int(len(queue_timeline) * 0.6), len(queue_timeline) - 1)
-    render_airport_station_cards(live_data, default_frame)
-    render_flight_information_screen(flight_delay_data)
+    start_simulation = st.button("Start Simulation", type="primary")
+    live_placeholder = st.empty()
+
+    if start_simulation:
+        for frame_index in range(len(queue_timeline)):
+            live_placeholder.empty()
+            with live_placeholder.container():
+                render_live_frame_header(live_data, frame_index)
+                render_airport_station_cards(live_data, frame_index)
+                render_flight_information_screen(
+                    flight_screen_for_frame(
+                        flight_delay_data,
+                        frame_index,
+                        len(queue_timeline),
+                    )
+                )
+            time.sleep(0.18)
+    else:
+        with live_placeholder.container():
+            render_live_frame_header(live_data, default_frame)
+            render_airport_station_cards(live_data, default_frame)
+            render_flight_information_screen(
+                flight_screen_for_frame(
+                    flight_delay_data,
+                    default_frame,
+                    len(queue_timeline),
+                )
+            )
+
     render_airport_delay_charts(live_data)
 
 
