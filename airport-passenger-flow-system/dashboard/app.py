@@ -1,5 +1,6 @@
 """Streamlit dashboard for analytics, delay prediction, and simulation."""
 
+import html
 from io import BytesIO
 import sys
 import time
@@ -657,33 +658,33 @@ def render_station_card(
     completion_row = ""
 
     if completion_time is not None:
-        completion_row = f"""
-            <div class="airport-card-row">
-                <span>Completion</span>
-                <span class="airport-card-value">{completion_time}</span>
-            </div>
-        """
+        completion_row = (
+            '<div class="airport-card-row">'
+            "<span>Completion</span>"
+            f'<span class="airport-card-value">{html.escape(completion_time)}</span>'
+            "</div>"
+        )
 
     st.markdown(
-        f"""
-        <div class="airport-card">
-            <div class="airport-card-title">{title}</div>
-            <div class="airport-card-row">
-                <span>Queue length</span>
-                <span class="airport-card-value">{queue_length}</span>
-            </div>
-            <div class="airport-card-row">
-                <span>Serving</span>
-                <span class="airport-card-value">{active_passenger}</span>
-            </div>
-            <div class="airport-card-row">
-                <span>Average wait</span>
-                <span class="airport-card-value">{average_wait:.2f} min</span>
-            </div>
-            {completion_row}
-            <span class="status-badge {status_class}">{status}</span>
-        </div>
-        """,
+        (
+            '<div class="airport-card">'
+            f'<div class="airport-card-title">{html.escape(title)}</div>'
+            '<div class="airport-card-row">'
+            "<span>Queue length</span>"
+            f'<span class="airport-card-value">{queue_length}</span>'
+            "</div>"
+            '<div class="airport-card-row">'
+            "<span>Serving</span>"
+            f'<span class="airport-card-value">{html.escape(active_passenger)}</span>'
+            "</div>"
+            '<div class="airport-card-row">'
+            "<span>Average wait</span>"
+            f'<span class="airport-card-value">{average_wait:.2f} min</span>'
+            "</div>"
+            f"{completion_row}"
+            f'<span class="status-badge {status_class}">{status}</span>'
+            "</div>"
+        ),
         unsafe_allow_html=True,
     )
 
@@ -777,36 +778,33 @@ def render_flight_information_screen(flight_delay_data: pd.DataFrame) -> None:
     for _, flight in flight_delay_data.iterrows():
         status = str(flight["status"])
         rows.append(
-            f"""
-            <tr>
-                <td>{flight['flight_number']}</td>
-                <td>{flight['destination']}</td>
-                <td>{flight['scheduled_time']}</td>
-                <td>{flight['estimated_time']}</td>
-                <td>
-                    <span class="flight-status {_flight_status_class(status)}">{status}</span>
-                </td>
-            </tr>
-            """
+            "<tr>"
+            f"<td>{html.escape(str(flight['flight_number']))}</td>"
+            f"<td>{html.escape(str(flight['destination']))}</td>"
+            f"<td>{html.escape(str(flight['scheduled_time']))}</td>"
+            f"<td>{html.escape(str(flight['estimated_time']))}</td>"
+            "<td>"
+            f'<span class="flight-status {_flight_status_class(status)}">'
+            f"{html.escape(status)}</span>"
+            "</td>"
+            "</tr>"
         )
 
     st.markdown(
-        f"""
-        <table class="flight-board">
-            <thead>
-                <tr>
-                    <th>Flight Number</th>
-                    <th>Destination</th>
-                    <th>Scheduled Time</th>
-                    <th>Estimated Time</th>
-                    <th>Status</th>
-                </tr>
-            </thead>
-            <tbody>
-                {''.join(rows)}
-            </tbody>
-        </table>
-        """,
+        (
+            '<table class="flight-board">'
+            "<thead>"
+            "<tr>"
+            "<th>Flight Number</th>"
+            "<th>Destination</th>"
+            "<th>Scheduled Time</th>"
+            "<th>Estimated Time</th>"
+            "<th>Status</th>"
+            "</tr>"
+            "</thead>"
+            f"<tbody>{''.join(rows)}</tbody>"
+            "</table>"
+        ),
         unsafe_allow_html=True,
     )
 
