@@ -184,6 +184,58 @@ def render_airport_dashboard_css() -> None:
         .status-busy {
             background: #f5b84b;
         }
+        .flight-board {
+            width: 100%;
+            border-collapse: collapse;
+            background: #071018;
+            color: #edf8ff;
+            border: 1px solid #244861;
+            border-radius: 8px;
+            overflow: hidden;
+            font-size: 14px;
+        }
+        .flight-board th {
+            background: #10283a;
+            color: #8fd3ff;
+            text-align: left;
+            padding: 10px;
+            border-bottom: 1px solid #244861;
+        }
+        .flight-board td {
+            padding: 10px;
+            border-bottom: 1px solid #152c3d;
+        }
+        .flight-board tr:last-child td {
+            border-bottom: none;
+        }
+        .flight-status {
+            display: inline-block;
+            border-radius: 6px;
+            padding: 4px 8px;
+            font-weight: 800;
+            min-width: 78px;
+            text-align: center;
+        }
+        .flight-on-time {
+            background: #1f9d55;
+            color: #ffffff;
+        }
+        .flight-delayed {
+            background: #d64545;
+            color: #ffffff;
+        }
+        .flight-boarding {
+            background: #2f80ed;
+            color: #ffffff;
+        }
+        .flight-gate-closed {
+            background: #f5b84b;
+            color: #06101a;
+        }
+        .flight-departed {
+            background: #73808c;
+            color: #ffffff;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -707,6 +759,56 @@ def render_airport_station_cards(
             )
 
 
+def _flight_status_class(status: str) -> str:
+    """Return the CSS class for a flight board status."""
+
+    status_key = status.lower().replace(" ", "-")
+    return f"flight-{status_key}"
+
+
+def render_flight_information_screen(flight_delay_data: pd.DataFrame) -> None:
+    """Render a real-airport style flight information screen."""
+
+    st.markdown("### Flight Status Screen")
+
+    rows = []
+    for _, flight in flight_delay_data.iterrows():
+        status = str(flight["status"])
+        rows.append(
+            f"""
+            <tr>
+                <td>{flight['flight_number']}</td>
+                <td>{flight['destination']}</td>
+                <td>{flight['scheduled_time']}</td>
+                <td>{flight['estimated_time']}</td>
+                <td>
+                    <span class="flight-status {_flight_status_class(status)}">{status}</span>
+                </td>
+            </tr>
+            """
+        )
+
+    st.markdown(
+        f"""
+        <table class="flight-board">
+            <thead>
+                <tr>
+                    <th>Flight Number</th>
+                    <th>Destination</th>
+                    <th>Scheduled Time</th>
+                    <th>Estimated Time</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join(rows)}
+            </tbody>
+        </table>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
 def render_airport_live_simulation_page() -> None:
     """Render a visual airport operations dashboard."""
 
@@ -763,6 +865,7 @@ def render_airport_live_simulation_page() -> None:
 
     default_frame = min(int(len(queue_timeline) * 0.6), len(queue_timeline) - 1)
     render_airport_station_cards(live_data, default_frame)
+    render_flight_information_screen(flight_delay_data)
 
 
 def main() -> None:
