@@ -6,6 +6,7 @@ from pathlib import Path
 
 import joblib
 import pandas as pd
+import plotly.express as px
 import streamlit as st
 import streamlit.components.v1 as components
 
@@ -809,6 +810,79 @@ def render_flight_information_screen(flight_delay_data: pd.DataFrame) -> None:
     )
 
 
+def render_airport_delay_charts(live_data: dict[str, object]) -> None:
+    """Render Plotly charts for airport delay and queue behavior."""
+
+    st.markdown("### Delay and Queue Analytics")
+
+    flight_delay_data = live_data["flight_delay_data"].copy()
+    queue_timeline = live_data["queue_timeline"].copy()
+    stage_wait_times = live_data["stage_wait_times"].copy()
+
+    status_colors = {
+        "On Time": "#47d16c",
+        "Delayed": "#d64545",
+        "Boarding": "#2f80ed",
+        "Gate Closed": "#f5b84b",
+        "Departed": "#73808c",
+    }
+
+    delay_chart = px.bar(
+        flight_delay_data,
+        x="flight_number",
+        y="delay_minutes",
+        color="status",
+        color_discrete_map=status_colors,
+        labels={
+            "flight_number": "Flight",
+            "delay_minutes": "Delay Minutes",
+            "status": "Status",
+        },
+        title="Delay Minutes by Flight",
+        template="plotly_dark",
+    )
+
+    queue_chart = px.line(
+        queue_timeline,
+        x="time",
+        y=["check_in_queue", "security_queue", "boarding_queue", "total_queue"],
+        labels={"time": "Simulation Time", "value": "Queue Length", "variable": "Queue"},
+        title="Passenger Queue Length Over Time",
+        template="plotly_dark",
+    )
+
+    wait_chart = px.bar(
+        stage_wait_times,
+        x="stage",
+        y="average_wait_minutes",
+        color="stage",
+        labels={"stage": "Airport Stage", "average_wait_minutes": "Average Wait"},
+        title="Average Wait Time by Airport Stage",
+        template="plotly_dark",
+    )
+    wait_chart.update_layout(showlegend=False)
+
+    flight_delay_data["delay_group"] = flight_delay_data["delay_minutes"].apply(
+        lambda minutes: "Delayed" if minutes >= 15 else "On Time"
+    )
+    pie_chart = px.pie(
+        flight_delay_data,
+        names="delay_group",
+        color="delay_group",
+        color_discrete_map={"Delayed": "#d64545", "On Time": "#47d16c"},
+        title="Delayed vs On-Time Flights",
+        template="plotly_dark",
+    )
+
+    chart_col1, chart_col2 = st.columns(2)
+    chart_col1.plotly_chart(delay_chart, use_container_width=True)
+    chart_col2.plotly_chart(queue_chart, use_container_width=True)
+
+    chart_col3, chart_col4 = st.columns(2)
+    chart_col3.plotly_chart(wait_chart, use_container_width=True)
+    chart_col4.plotly_chart(pie_chart, use_container_width=True)
+
+
 def render_airport_live_simulation_page() -> None:
     """Render a visual airport operations dashboard."""
 
@@ -866,6 +940,7 @@ def render_airport_live_simulation_page() -> None:
     default_frame = min(int(len(queue_timeline) * 0.6), len(queue_timeline) - 1)
     render_airport_station_cards(live_data, default_frame)
     render_flight_information_screen(flight_delay_data)
+    render_airport_delay_charts(live_data)
 
 
 def main() -> None:
