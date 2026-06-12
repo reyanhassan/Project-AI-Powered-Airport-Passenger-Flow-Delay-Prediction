@@ -205,6 +205,46 @@ def build_advanced_airport_html() -> str:
     font-size: 13px;
     line-height: 1.5;
   }
+  .passenger {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--yellow);
+    border: 2px solid #fff3bf;
+    box-shadow: 0 0 14px rgba(255, 209, 102, 0.65);
+    transform: translate(-40px, -40px);
+    transition: opacity 0.2s ease;
+    z-index: 10;
+  }
+  .passenger::after {
+    content: attr(data-id);
+    position: absolute;
+    left: 50%;
+    top: 20px;
+    transform: translateX(-50%);
+    color: #dff6ff;
+    font-size: 9px;
+    font-weight: 900;
+    white-space: nowrap;
+    text-shadow: 0 1px 4px #000;
+  }
+  .passenger.boarded {
+    background: var(--green);
+    border-color: #d6ffe9;
+    box-shadow: 0 0 14px rgba(57, 217, 138, 0.58);
+  }
+  .queue-dot {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(56, 197, 255, 0.7);
+    box-shadow: 0 0 10px rgba(56, 197, 255, 0.65);
+    z-index: 8;
+  }
 </style>
 </head>
 <body>
@@ -252,6 +292,184 @@ def build_advanced_airport_html() -> str:
       </aside>
     </div>
   </div>
+<script>
+(() => {
+  const config = {
+    passengerCount: 36,
+    speed: 1.0,
+    delayProbability: 0.28,
+    autoStart: true
+  };
+
+  const map = document.getElementById("airport-map");
+  const metrics = {
+    total: document.getElementById("metric-total"),
+    checkin: document.getElementById("metric-checkin"),
+    security: document.getElementById("metric-security"),
+    lounge: document.getElementById("metric-lounge"),
+    boarded: document.getElementById("metric-boarded"),
+    wait: document.getElementById("metric-wait")
+  };
+  const points = {
+    entrance: { x: 82, y: 306 },
+    checkQueue: { x: 252, y: 306 },
+    counter: { x: 472, y: 306 },
+    securityQueue: { x: 660, y: 306 },
+    securityLane: { x: 864, y: 306 },
+    lounge: { x: 416, y: 532 },
+    gate: { x: 752, y: 532 },
+    aircraft: { x: 986, y: 532 }
+  };
+  const phases = [
+    { name: "entrance", from: "entrance", to: "checkQueue", duration: 2.2 },
+    { name: "checkin", from: "checkQueue", to: "counter", duration: 5.0, queue: "checkin" },
+    { name: "counter", from: "counter", to: "securityQueue", duration: 3.2 },
+    { name: "security", from: "securityQueue", to: "securityLane", duration: 4.6, queue: "security" },
+    { name: "lane", from: "securityLane", to: "lounge", duration: 3.8 },
+    { name: "lounge", from: "lounge", to: "gate", duration: 5.0 },
+    { name: "gate", from: "gate", to: "aircraft", duration: 4.8, queue: "gate" },
+    { name: "boarded", from: "aircraft", to: "aircraft", duration: 999 }
+  ];
+  const totalDuration = phases.slice(0, -1).reduce((sum, phase) => sum + phase.duration, 0);
+
+  function ease(value) {
+    return value < 0.5 ? 2 * value * value : 1 - Math.pow(-2 * value + 2, 2) / 2;
+  }
+
+  function interpolate(start, end, progress) {
+    const curved = ease(Math.max(0, Math.min(progress, 1)));
+    return {
+      x: start.x + (end.x - start.x) * curved,
+      y: start.y + (end.y - start.y) * curved
+    };
+  }
+
+  function queuePosition(queueName, passengerIndex) {
+    const column = passengerIndex % 5;
+    const row = Math.floor(passengerIndex / 5) % 6;
+    if (queueName === "checkin") return { x: 218 + column * 24, y: 262 + row * 22 };
+    if (queueName === "security") return { x: 618 + column * 22, y: 262 + row * 22 };
+    return { x: 668 + column * 24, y: 510 + row * 17 };
+  }
+
+  function getPhase(localTime, passengerIndex) {
+    let cursor = 0;
+    for (const phase of phases) {
+      const next = cursor + phase.duration;
+      if (localTime <= next) {
+        const progress = (localTime - cursor) / phase.duration;
+        if (phase.queue && progress < 0.55) {
+          return {
+            phase,
+            position: queuePosition(phase.queue, passengerIndex),
+            progress,
+            queued: true
+          };
+        }
+        return {
+          phase,
+          position: interpolate(points[phase.from], points[phase.to], progress),
+          progress,
+          queued: false
+        };
+      }
+      cursor = next;
+    }
+    return {
+      phase: phases[phases.length - 1],
+      position: points.aircraft,
+      progress: 1,
+      queued: false
+    };
+  }
+
+  function createPassengers() {
+    const passengers = [];
+    for (let index = 0; index < config.passengerCount; index += 1) {
+      const element = document.createElement("div");
+      const id = `P${String(index + 1).padStart(3, "0")}`;
+      element.className = "passenger";
+      element.dataset.id = id;
+      element.title = id;
+      map.appendChild(element);
+      passengers.push({
+        id,
+        index,
+        delay: index * 0.55,
+        waitOffset: 2 + (index % 7) * 0.42,
+        element
+      });
+    }
+    return passengers;
+  }
+
+  function createStaticQueueDots() {
+    const queues = [
+      ["checkin", 12],
+      ["security", 10],
+      ["gate", 8]
+    ];
+    for (const [queueName, count] of queues) {
+      for (let index = 0; index < count; index += 1) {
+        const dot = document.createElement("div");
+        const point = queuePosition(queueName, index);
+        dot.className = "queue-dot";
+        dot.style.left = `${point.x + 6}px`;
+        dot.style.top = `${point.y + 6}px`;
+        map.appendChild(dot);
+      }
+    }
+  }
+
+  function updateMetrics(counts, averageWait) {
+    metrics.total.textContent = String(config.passengerCount);
+    metrics.checkin.textContent = String(counts.checkin);
+    metrics.security.textContent = String(counts.security);
+    metrics.lounge.textContent = String(counts.lounge);
+    metrics.boarded.textContent = String(counts.boarded);
+    metrics.wait.textContent = `${averageWait.toFixed(1)}m`;
+  }
+
+  function startAnimation() {
+    const passengers = createPassengers();
+    createStaticQueueDots();
+    const startTime = performance.now();
+
+    function tick(now) {
+      const elapsed = ((now - startTime) / 1000) * config.speed;
+      const counts = { checkin: 0, security: 0, lounge: 0, boarded: 0 };
+      let totalWait = 0;
+
+      passengers.forEach((passenger) => {
+        const localTime = elapsed - passenger.delay;
+        if (localTime < 0) {
+          passenger.element.style.opacity = "0";
+          return;
+        }
+
+        passenger.element.style.opacity = "1";
+        const state = getPhase(localTime, passenger.index);
+        const { phase, position } = state;
+        passenger.element.style.transform = `translate(${position.x}px, ${position.y}px)`;
+        passenger.element.classList.toggle("boarded", phase.name === "boarded");
+
+        if (["checkin", "counter"].includes(phase.name)) counts.checkin += 1;
+        if (["security", "lane"].includes(phase.name)) counts.security += 1;
+        if (["lounge", "gate"].includes(phase.name)) counts.lounge += 1;
+        if (phase.name === "boarded") counts.boarded += 1;
+        totalWait += Math.min(localTime, totalDuration) * 0.18 + passenger.waitOffset;
+      });
+
+      updateMetrics(counts, totalWait / Math.max(passengers.length, 1));
+      requestAnimationFrame(tick);
+    }
+
+    requestAnimationFrame(tick);
+  }
+
+  if (config.autoStart) startAnimation();
+})();
+</script>
 </body>
 </html>
 """
