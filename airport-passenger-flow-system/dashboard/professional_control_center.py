@@ -234,6 +234,24 @@ def render_professional_streamlit_css() -> None:
             font-weight: 900;
             margin-bottom: 8px;
         }
+        .pcc-ml-explain {
+            background: #030914;
+            border: 1px solid rgba(59, 215, 255, 0.24);
+            border-radius: 8px;
+            color: #d7eaf5;
+            margin: 10px 0 16px 0;
+            padding: 12px 14px;
+        }
+        .pcc-ml-explain-title {
+            color: #ecf8ff;
+            font-size: 15px;
+            font-weight: 900;
+            margin-bottom: 8px;
+        }
+        .pcc-ml-explain ul {
+            margin: 0;
+            padding-left: 18px;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -249,8 +267,6 @@ def _sorted_options(data: pd.DataFrame, column: str) -> list[str]:
 def _risk_level(delay_probability: float) -> str:
     """Convert a model probability into a readable operations risk level."""
 
-    if delay_probability >= 0.75:
-        return "Critical"
     if delay_probability >= 0.55:
         return "High"
     if delay_probability >= 0.35:
@@ -307,6 +323,37 @@ def predict_delay_summary(model, model_input: pd.DataFrame) -> dict[str, object]
         "estimated_delay_minutes": estimated_delay_minutes,
         "risk_level": _risk_level(delay_probability),
     }
+
+
+def build_ml_prediction_reasons(
+    model_input: pd.DataFrame,
+    summary: dict[str, object],
+) -> list[str]:
+    """Explain delay prediction using beginner-friendly operating factors."""
+
+    if model_input.empty:
+        return ["Delay model input is not available."]
+
+    row = model_input.iloc[0]
+    reasons = []
+    if int(row["passenger_count"]) >= 180:
+        reasons.append("Passenger count is high.")
+    if int(row["previous_delay_minutes"]) > 0:
+        reasons.append("Previous delay exists.")
+    if int(row["security_wait_minutes"]) >= 25:
+        reasons.append("Security wait time is increasing.")
+    if int(row["gate_changes"]) > 0:
+        reasons.append("Gate changes occurred.")
+    if str(row["weather_condition"]) in {"Rain", "Fog", "Storm"}:
+        reasons.append(f"Weather risk is present: {row['weather_condition']}.")
+    if int(row["scheduled_hour"]) in {7, 8, 17, 18, 19}:
+        reasons.append("Flight is scheduled during a peak traffic period.")
+
+    if not reasons:
+        reasons.append("Current operating inputs are within normal ranges.")
+
+    risk_level = str(summary["risk_level"])
+    return [f"Delay risk is {risk_level} because:"] + reasons
 
 
 def render_delay_prediction_section(
@@ -419,6 +466,20 @@ def render_delay_prediction_section(
     metric_col2.metric("Delay Probability", f"{summary['delay_probability']:.1%}")
     metric_col3.metric("Estimated Delay Minutes", summary["estimated_delay_minutes"])
     metric_col4.metric("Risk Level", str(summary["risk_level"]))
+
+    reasons = build_ml_prediction_reasons(model_input, summary)
+    reason_items = "".join(
+        f"<li>{html.escape(reason)}</li>" for reason in reasons[1:]
+    )
+    st.markdown(
+        (
+            '<div class="pcc-ml-explain">'
+            f'<div class="pcc-ml-explain-title">{html.escape(reasons[0])}</div>'
+            f"<ul>{reason_items}</ul>"
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
 
     gauge = go.Figure(
         go.Indicator(
