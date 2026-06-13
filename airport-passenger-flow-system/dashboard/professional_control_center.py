@@ -1,7 +1,285 @@
 """Professional Airport Control Center page for the Streamlit dashboard."""
 
+from pathlib import Path
+import sys
+
+import joblib
+import pandas as pd
+import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
+from ml.preprocessing import (  # noqa: E402
+    CATEGORICAL_COLUMNS,
+    NUMERIC_COLUMNS,
+    clean_delay_data,
+    load_delay_dataset,
+)
+
+BEST_MODEL_PATH = PROJECT_ROOT / "ml" / "models" / "best_delay_model.joblib"
+RAW_DELAY_DATA_PATH = PROJECT_ROOT / "data" / "raw" / "airline_delay_realistic.csv"
+CLEAN_DELAY_DATA_PATH = PROJECT_ROOT / "data" / "processed" / "airline_delay_cleaned.csv"
+MODEL_INPUT_COLUMNS = CATEGORICAL_COLUMNS + NUMERIC_COLUMNS
+
+
+@st.cache_resource
+def load_professional_delay_model():
+    """Load the saved delay model used by the control center."""
+
+    if BEST_MODEL_PATH.exists():
+        return joblib.load(BEST_MODEL_PATH)
+
+    return None
+
+
+@st.cache_data
+def load_professional_delay_data() -> pd.DataFrame:
+    """Load cleaned delay data for select boxes and realistic defaults."""
+
+    if CLEAN_DELAY_DATA_PATH.exists():
+        return pd.read_csv(CLEAN_DELAY_DATA_PATH)
+
+    return clean_delay_data(load_delay_dataset(RAW_DELAY_DATA_PATH))
+
+
+def render_professional_streamlit_css() -> None:
+    """Style Streamlit sections so they match the control room page."""
+
+    st.markdown(
+        """
+        <style>
+        .pcc-panel {
+            background: #071624;
+            border: 1px solid rgba(59, 215, 255, 0.32);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .pcc-panel-title {
+            color: #ecf8ff;
+            font-size: 24px;
+            font-weight: 900;
+            margin-bottom: 4px;
+        }
+        .pcc-panel-subtitle {
+            color: #8ea9bb;
+            font-size: 13px;
+        }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def _sorted_options(data: pd.DataFrame, column: str) -> list[str]:
+    """Return clean select-box options for one dataset column."""
+
+    return sorted(data[column].dropna().astype(str).unique().tolist())
+
+
+def _risk_level(delay_probability: float) -> str:
+    """Convert a model probability into a readable operations risk level."""
+
+    if delay_probability >= 0.75:
+        return "Critical"
+    if delay_probability >= 0.55:
+        return "High"
+    if delay_probability >= 0.35:
+        return "Medium"
+    return "Low"
+
+
+def estimate_delay_minutes(
+    delay_probability: float,
+    previous_delay_minutes: float,
+    security_wait_minutes: float,
+    gate_changes: int,
+) -> int:
+    """Estimate delay minutes from the classifier probability and operations data."""
+
+    estimate = (
+        delay_probability * 55
+        + previous_delay_minutes * 0.22
+        + security_wait_minutes * 0.18
+        + gate_changes * 5
+        - 18
+    )
+    return max(0, int(round(estimate)))
+
+
+def predict_delay_summary(model, model_input: pd.DataFrame) -> dict[str, object]:
+    """Run the saved ML model and return display-ready delay values."""
+
+    if model is None or model_input.empty:
+        return {
+            "prediction": "Model Missing",
+            "delay_probability": 0.0,
+            "estimated_delay_minutes": 0,
+            "risk_level": "Unknown",
+        }
+
+    prediction = int(model.predict(model_input)[0])
+    if hasattr(model, "predict_proba"):
+        delay_probability = float(model.predict_proba(model_input)[0][1])
+    else:
+        delay_probability = float(prediction)
+
+    row = model_input.iloc[0]
+    estimated_delay_minutes = estimate_delay_minutes(
+        delay_probability,
+        float(row["previous_delay_minutes"]),
+        float(row["security_wait_minutes"]),
+        int(row["gate_changes"]),
+    )
+
+    return {
+        "prediction": "Delayed" if prediction == 1 else "On Time",
+        "delay_probability": delay_probability,
+        "estimated_delay_minutes": estimated_delay_minutes,
+        "risk_level": _risk_level(delay_probability),
+    }
+
+
+def render_delay_prediction_section(
+    delay_data: pd.DataFrame,
+    model,
+) -> tuple[pd.DataFrame, dict[str, object]]:
+    """Render the ML delay prediction controls and summary metrics."""
+
+    st.markdown(
+        """
+        <div class="pcc-panel">
+            <div class="pcc-panel-title">Delay Prediction</div>
+            <div class="pcc-panel-subtitle">Saved ML model connected to the control center flight operations view</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if delay_data.empty:
+        st.warning("Delay data is not available for control-center predictions.")
+        empty_input = pd.DataFrame(columns=MODEL_INPUT_COLUMNS)
+        return empty_input, predict_delay_summary(model, empty_input)
+
+    defaults = delay_data.iloc[0]
+    input_col1, input_col2, input_col3 = st.columns(3)
+
+    airline = input_col1.selectbox(
+        "Airline",
+        _sorted_options(delay_data, "airline"),
+        key="pcc_airline",
+    )
+    origin_airport = input_col1.selectbox(
+        "Origin Airport",
+        _sorted_options(delay_data, "origin_airport"),
+        key="pcc_origin_airport",
+    )
+    destination_airport = input_col1.selectbox(
+        "Destination Airport",
+        _sorted_options(delay_data, "destination_airport"),
+        key="pcc_destination_airport",
+    )
+
+    flight_day = input_col2.selectbox(
+        "Flight Day",
+        _sorted_options(delay_data, "flight_day"),
+        key="pcc_flight_day",
+    )
+    weather_condition = input_col2.selectbox(
+        "Weather",
+        _sorted_options(delay_data, "weather_condition"),
+        key="pcc_weather_condition",
+    )
+    scheduled_hour = input_col2.slider(
+        "Scheduled Hour",
+        0,
+        23,
+        int(defaults["scheduled_hour"]),
+        key="pcc_scheduled_hour",
+    )
+
+    passenger_count = input_col3.number_input(
+        "Passenger Count",
+        50,
+        320,
+        int(defaults["passenger_count"]),
+        key="pcc_passenger_count",
+    )
+    previous_delay_minutes = input_col3.number_input(
+        "Previous Delay Minutes",
+        0,
+        180,
+        int(defaults["previous_delay_minutes"]),
+        key="pcc_previous_delay_minutes",
+    )
+    security_wait_minutes = input_col3.number_input(
+        "Security Wait Minutes",
+        0,
+        120,
+        int(defaults["security_wait_minutes"]),
+        key="pcc_security_wait_minutes",
+    )
+    gate_changes = input_col3.number_input(
+        "Gate Changes",
+        0,
+        5,
+        int(defaults["gate_changes"]),
+        key="pcc_gate_changes",
+    )
+
+    model_input = pd.DataFrame(
+        [
+            {
+                "airline": airline,
+                "origin_airport": origin_airport,
+                "destination_airport": destination_airport,
+                "flight_day": flight_day,
+                "scheduled_hour": scheduled_hour,
+                "weather_condition": weather_condition,
+                "passenger_count": passenger_count,
+                "previous_delay_minutes": previous_delay_minutes,
+                "security_wait_minutes": security_wait_minutes,
+                "gate_changes": gate_changes,
+            }
+        ]
+    )
+    summary = predict_delay_summary(model, model_input)
+
+    metric_col1, metric_col2, metric_col3, metric_col4 = st.columns(4)
+    metric_col1.metric("Delay Prediction", str(summary["prediction"]))
+    metric_col2.metric("Delay Probability", f"{summary['delay_probability']:.1%}")
+    metric_col3.metric("Estimated Delay Minutes", summary["estimated_delay_minutes"])
+    metric_col4.metric("Risk Level", str(summary["risk_level"]))
+
+    gauge = go.Figure(
+        go.Indicator(
+            mode="gauge+number",
+            value=float(summary["delay_probability"]) * 100,
+            number={"suffix": "%"},
+            title={"text": "Delay Probability Gauge"},
+            gauge={
+                "axis": {"range": [0, 100]},
+                "bar": {"color": "#3bd7ff"},
+                "steps": [
+                    {"range": [0, 35], "color": "#12382d"},
+                    {"range": [35, 55], "color": "#3a3212"},
+                    {"range": [55, 100], "color": "#3d1519"},
+                ],
+            },
+        )
+    )
+    gauge.update_layout(
+        template="plotly_dark",
+        height=260,
+        margin={"l": 20, "r": 20, "t": 40, "b": 20},
+    )
+    st.plotly_chart(gauge, use_container_width=True)
+
+    return model_input, summary
 
 
 def build_professional_control_center_html() -> str:
@@ -930,5 +1208,10 @@ def build_professional_control_center_html() -> str:
 
 def render_professional_airport_control_center_page() -> None:
     """Render the professional airport control center page."""
+
+    render_professional_streamlit_css()
+    delay_data = load_professional_delay_data()
+    model = load_professional_delay_model()
+    render_delay_prediction_section(delay_data, model)
 
     components.html(build_professional_control_center_html(), height=1380, scrolling=True)
