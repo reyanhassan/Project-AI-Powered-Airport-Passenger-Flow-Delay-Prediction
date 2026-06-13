@@ -209,6 +209,31 @@ def render_professional_streamlit_css() -> None:
             line-height: 1.45;
             margin-top: 8px;
         }
+        .pcc-stage-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .pcc-stage-card {
+            background: #071624;
+            border: 1px solid rgba(59, 215, 255, 0.24);
+            border-left: 5px solid #34d399;
+            border-radius: 8px;
+            padding: 14px;
+        }
+        .pcc-stage-card.busy {
+            border-left-color: #fbbf24;
+        }
+        .pcc-stage-card.overloaded {
+            border-left-color: #f87171;
+        }
+        .pcc-stage-title {
+            color: #ecf8ff;
+            font-size: 17px;
+            font-weight: 900;
+            margin-bottom: 8px;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -847,6 +872,109 @@ def render_delay_explanation_center(
         f'<div class="pcc-delay-grid">{"".join(cards)}</div>',
         unsafe_allow_html=True,
     )
+
+
+def build_stage_waiting_analytics(
+    flight_rows: list[dict[str, object]],
+    analytics: dict[str, pd.DataFrame | dict[str, float | int]],
+) -> pd.DataFrame:
+    """Build per-stage waiting analytics for airport operations."""
+
+    queue_timeline = analytics["queue_timeline"]
+    wait_times = analytics["wait_times"].set_index("stage")
+    passenger_distribution = analytics["passenger_distribution"].set_index("stage")
+    affected_flights = ", ".join(
+        str(flight["flight"])
+        for flight in flight_rows
+        if flight["delayMinutes"] > 0 or flight["delayProbability"] >= 0.55
+    )
+    if not affected_flights:
+        affected_flights = "None"
+
+    stage_sources = [
+        ("Check-in", "check_in_queue"),
+        ("Security", "security_queue"),
+        ("Immigration", "immigration_queue"),
+        ("Boarding", "boarding_queue"),
+        ("Lounge", None),
+    ]
+    rows = []
+    for stage, queue_column in stage_sources:
+        if queue_column:
+            waiting_passengers = int(queue_timeline[queue_column].max())
+        else:
+            waiting_passengers = int(passenger_distribution.loc["Lounge", "passengers"])
+
+        if stage in wait_times.index:
+            average_wait = float(wait_times.loc[stage, "average_wait_minutes"])
+        else:
+            average_wait = 2.8 + waiting_passengers * 0.24
+        maximum_wait = round(average_wait + waiting_passengers * 0.45, 2)
+
+        if waiting_passengers >= 12 or average_wait >= 7.5:
+            status = "Overloaded"
+        elif waiting_passengers >= 6 or average_wait >= 4.5:
+            status = "Busy"
+        else:
+            status = "Normal"
+
+        rows.append(
+            {
+                "stage": stage,
+                "waiting_passengers": waiting_passengers,
+                "average_wait": round(average_wait, 2),
+                "maximum_wait": maximum_wait,
+                "affected_flights": affected_flights,
+                "status": status,
+            }
+        )
+
+    return pd.DataFrame(rows)
+
+
+def render_stage_waiting_analytics(
+    flight_rows: list[dict[str, object]],
+    analytics: dict[str, pd.DataFrame | dict[str, float | int]],
+) -> pd.DataFrame:
+    """Render detailed waiting analytics for each airport stage."""
+
+    stage_data = build_stage_waiting_analytics(flight_rows, analytics)
+    st.markdown(
+        """
+        <div class="pcc-panel">
+            <div class="pcc-panel-title">Stage Waiting Analytics</div>
+            <div class="pcc-panel-subtitle">Waiting passengers, average wait, maximum wait, affected flights and stage status</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    cards = []
+    for _, stage in stage_data.iterrows():
+        status_class = str(stage["status"]).lower()
+        cards.append(
+            (
+                f'<div class="pcc-stage-card {status_class}">'
+                f'<div class="pcc-stage-title">{html.escape(str(stage["stage"]))}</div>'
+                '<div class="pcc-delay-row"><span>Waiting Passengers</span>'
+                f'<span class="pcc-delay-value">{int(stage["waiting_passengers"])}</span></div>'
+                '<div class="pcc-delay-row"><span>Average Wait</span>'
+                f'<span class="pcc-delay-value">{float(stage["average_wait"]):.2f} min</span></div>'
+                '<div class="pcc-delay-row"><span>Maximum Wait</span>'
+                f'<span class="pcc-delay-value">{float(stage["maximum_wait"]):.2f} min</span></div>'
+                '<div class="pcc-delay-row"><span>Affected Flights</span>'
+                f'<span class="pcc-delay-value">{html.escape(str(stage["affected_flights"]))}</span></div>'
+                '<div class="pcc-delay-row"><span>Status</span>'
+                f'<span class="pcc-delay-value">{html.escape(str(stage["status"]))}</span></div>'
+                "</div>"
+            )
+        )
+
+    st.markdown(
+        f'<div class="pcc-stage-grid">{"".join(cards)}</div>',
+        unsafe_allow_html=True,
+    )
+    return stage_data
 
 
 def build_control_center_event_log(
@@ -2042,4 +2170,5 @@ def render_professional_airport_control_center_page() -> None:
     )
     analytics = render_control_center_analytics(flight_rows, prediction_summary)
     render_delay_explanation_center(flight_rows, analytics)
+    render_stage_waiting_analytics(flight_rows, analytics)
     render_control_center_event_log(flight_rows)
