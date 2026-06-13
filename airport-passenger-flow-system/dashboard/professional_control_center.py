@@ -5,7 +5,9 @@ from pathlib import Path
 import sys
 
 import joblib
+import numpy as np
 import pandas as pd
+import plotly.express as px
 import plotly.graph_objects as go
 import streamlit as st
 import streamlit.components.v1 as components
@@ -405,6 +407,223 @@ def build_default_control_center_flights() -> list[dict[str, object]]:
             )
         )
     ]
+
+
+def build_control_center_analytics(
+    flight_rows: list[dict[str, object]],
+    prediction_summary: dict[str, object],
+) -> dict[str, pd.DataFrame | dict[str, float | int]]:
+    """Create analytics tables for the professional control center."""
+
+    total_passengers = 46
+    time_values = np.arange(0, 121, 5)
+    check_in_queue = np.maximum(
+        0,
+        np.round(10 * np.exp(-((time_values - 18) / 16) ** 2) + 3 * np.sin(time_values / 8)),
+    ).astype(int)
+    security_queue = np.maximum(
+        0,
+        np.round(8 * np.exp(-((time_values - 36) / 18) ** 2) + 2 * np.sin(time_values / 10)),
+    ).astype(int)
+    immigration_queue = np.maximum(
+        0,
+        np.round(9 * np.exp(-((time_values - 52) / 20) ** 2) + 2 * np.cos(time_values / 11)),
+    ).astype(int)
+    boarding_queue = np.maximum(
+        0,
+        np.round(11 * np.exp(-((time_values - 82) / 22) ** 2) + 2 * np.sin(time_values / 9)),
+    ).astype(int)
+
+    queue_timeline = pd.DataFrame(
+        {
+            "time": time_values,
+            "check_in_queue": check_in_queue,
+            "security_queue": security_queue,
+            "immigration_queue": immigration_queue,
+            "boarding_queue": boarding_queue,
+        }
+    )
+    queue_timeline["total_queue"] = queue_timeline[
+        ["check_in_queue", "security_queue", "immigration_queue", "boarding_queue"]
+    ].sum(axis=1)
+    queue_timeline["processed_passengers"] = np.minimum(
+        total_passengers,
+        np.round((time_values / time_values.max()) ** 1.08 * total_passengers).astype(int),
+    )
+
+    wait_times = pd.DataFrame(
+        {
+            "stage": ["Check-in", "Security", "Immigration", "Boarding"],
+            "average_wait_minutes": [
+                round(3.2 + queue_timeline["check_in_queue"].mean() * 0.32, 2),
+                round(3.8 + queue_timeline["security_queue"].mean() * 0.38, 2),
+                round(3.4 + queue_timeline["immigration_queue"].mean() * 0.36, 2),
+                round(2.4 + queue_timeline["boarding_queue"].mean() * 0.28, 2),
+            ],
+        }
+    )
+
+    passenger_distribution = pd.DataFrame(
+        {
+            "stage": ["Check-in", "Security", "Immigration", "Lounge", "Boarding", "Boarded"],
+            "passengers": [4, 5, 7, 10, 8, 12],
+        }
+    )
+
+    flight_status = pd.DataFrame(flight_rows)
+    flight_status["delay_group"] = flight_status.apply(
+        lambda row: "Delayed"
+        if row["delayMinutes"] > 0 or row["delayProbability"] >= 0.55
+        else "On Time",
+        axis=1,
+    )
+    delay_distribution = (
+        flight_status["delay_group"]
+        .value_counts()
+        .rename_axis("status")
+        .reset_index(name="flights")
+    )
+
+    metrics = {
+        "total_passengers": total_passengers,
+        "processed_passengers": int(queue_timeline["processed_passengers"].iloc[-1]),
+        "average_check_in_wait": float(wait_times.iloc[0]["average_wait_minutes"]),
+        "average_security_wait": float(wait_times.iloc[1]["average_wait_minutes"]),
+        "average_immigration_wait": float(wait_times.iloc[2]["average_wait_minutes"]),
+        "average_boarding_wait": float(wait_times.iloc[3]["average_wait_minutes"]),
+        "peak_queue": int(queue_timeline["total_queue"].max()),
+        "delayed_flights": int((flight_status["delay_group"] == "Delayed").sum()),
+        "delay_probability": float(prediction_summary["delay_probability"]),
+    }
+
+    return {
+        "queue_timeline": queue_timeline,
+        "wait_times": wait_times,
+        "passenger_distribution": passenger_distribution,
+        "delay_distribution": delay_distribution,
+        "flight_status": flight_status,
+        "metrics": metrics,
+    }
+
+
+def render_control_center_analytics(
+    flight_rows: list[dict[str, object]],
+    prediction_summary: dict[str, object],
+) -> dict[str, pd.DataFrame | dict[str, float | int]]:
+    """Render the required control-center metrics and Plotly charts."""
+
+    analytics = build_control_center_analytics(flight_rows, prediction_summary)
+    metrics = analytics["metrics"]
+
+    st.markdown(
+        """
+        <div class="pcc-panel">
+            <div class="pcc-panel-title">Control Center Analytics</div>
+            <div class="pcc-panel-subtitle">Operational metrics, queues, passenger processing and delay risk</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    metric_row1 = st.columns(4)
+    metric_row1[0].metric("Total passengers", metrics["total_passengers"])
+    metric_row1[1].metric("Processed passengers", metrics["processed_passengers"])
+    metric_row1[2].metric("Average check-in wait", f"{metrics['average_check_in_wait']:.2f} min")
+    metric_row1[3].metric("Average security wait", f"{metrics['average_security_wait']:.2f} min")
+
+    metric_row2 = st.columns(4)
+    metric_row2[0].metric(
+        "Average immigration wait",
+        f"{metrics['average_immigration_wait']:.2f} min",
+    )
+    metric_row2[1].metric("Average boarding wait", f"{metrics['average_boarding_wait']:.2f} min")
+    metric_row2[2].metric("Peak queue", metrics["peak_queue"])
+    metric_row2[3].metric("Delayed flights", metrics["delayed_flights"])
+
+    queue_timeline = analytics["queue_timeline"]
+    wait_times = analytics["wait_times"]
+    passenger_distribution = analytics["passenger_distribution"]
+    delay_distribution = analytics["delay_distribution"]
+
+    queue_chart = px.line(
+        queue_timeline,
+        x="time",
+        y=["check_in_queue", "security_queue", "immigration_queue", "boarding_queue", "total_queue"],
+        title="Queue Length Over Time",
+        labels={"time": "Simulation Time", "value": "Queue Length", "variable": "Queue"},
+        template="plotly_dark",
+    )
+    wait_chart = px.bar(
+        wait_times,
+        x="stage",
+        y="average_wait_minutes",
+        color="stage",
+        title="Wait Time by Stage",
+        labels={"stage": "Stage", "average_wait_minutes": "Average Wait"},
+        template="plotly_dark",
+    )
+    wait_chart.update_layout(showlegend=False)
+
+    distribution_chart = px.pie(
+        passenger_distribution,
+        values="passengers",
+        names="stage",
+        title="Passenger Distribution",
+        template="plotly_dark",
+    )
+    delayed_chart = px.pie(
+        delay_distribution,
+        values="flights",
+        names="status",
+        color="status",
+        color_discrete_map={"Delayed": "#f87171", "On Time": "#34d399"},
+        title="Delayed vs On-Time Flights",
+        template="plotly_dark",
+    )
+    processed_chart = px.area(
+        queue_timeline,
+        x="time",
+        y="processed_passengers",
+        title="Passengers Processed Over Time",
+        labels={"time": "Simulation Time", "processed_passengers": "Processed Passengers"},
+        template="plotly_dark",
+    )
+    gauge_chart = go.Figure(
+        go.Indicator(
+            mode="gauge+number",
+            value=metrics["delay_probability"] * 100,
+            number={"suffix": "%"},
+            title={"text": "Delay Probability Gauge"},
+            gauge={
+                "axis": {"range": [0, 100]},
+                "bar": {"color": "#3bd7ff"},
+                "steps": [
+                    {"range": [0, 35], "color": "#12382d"},
+                    {"range": [35, 55], "color": "#3a3212"},
+                    {"range": [55, 100], "color": "#3d1519"},
+                ],
+            },
+        )
+    )
+    gauge_chart.update_layout(
+        template="plotly_dark",
+        height=360,
+        margin={"l": 20, "r": 20, "t": 45, "b": 20},
+    )
+
+    chart_col1, chart_col2 = st.columns(2)
+    chart_col1.plotly_chart(queue_chart, use_container_width=True)
+    chart_col2.plotly_chart(wait_chart, use_container_width=True)
+
+    chart_col3, chart_col4 = st.columns(2)
+    chart_col3.plotly_chart(distribution_chart, use_container_width=True)
+    chart_col4.plotly_chart(delayed_chart, use_container_width=True)
+
+    chart_col5, chart_col6 = st.columns(2)
+    chart_col5.plotly_chart(processed_chart, use_container_width=True)
+    chart_col6.plotly_chart(gauge_chart, use_container_width=True)
+
+    return analytics
 
 
 def build_professional_control_center_html(
@@ -1336,7 +1555,7 @@ def render_professional_airport_control_center_page() -> None:
     render_professional_streamlit_css()
     delay_data = load_professional_delay_data()
     model = load_professional_delay_model()
-    selected_input, _ = render_delay_prediction_section(delay_data, model)
+    selected_input, prediction_summary = render_delay_prediction_section(delay_data, model)
     flight_rows = build_control_center_flight_rows(delay_data, model, selected_input)
 
     components.html(
@@ -1344,3 +1563,4 @@ def render_professional_airport_control_center_page() -> None:
         height=1380,
         scrolling=True,
     )
+    render_control_center_analytics(flight_rows, prediction_summary)
