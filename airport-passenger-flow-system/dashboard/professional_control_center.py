@@ -500,6 +500,21 @@ def build_control_center_flight_rows(
         elif probability < 0.35:
             estimated_delay = 0
 
+        bottleneck_stage = ["Security", "Check-in", "Immigration", "Boarding"][index % 4]
+        passengers_waiting = max(0, int(round(probability * 42 + estimated_delay * 0.45)))
+        if estimated_delay == 0 and probability < 0.45:
+            delay_reason = "None"
+            bottleneck_stage = "None"
+            passengers_waiting = max(0, passengers_waiting // 3)
+        elif probability >= 0.65:
+            delay_reason = "High Passenger Arrival Rate"
+        elif int(row["gate_changes"]) > 0:
+            delay_reason = "Gate Change"
+        elif float(row["previous_delay_minutes"]) > 20:
+            delay_reason = "Previous Flight Delay"
+        else:
+            delay_reason = f"{bottleneck_stage} Queue"
+
         scheduled_hour = int(row["scheduled_hour"])
         scheduled_minutes = scheduled_hour * 60 + int(template["minute"])
 
@@ -512,6 +527,9 @@ def build_control_center_flight_rows(
                 "delayMinutes": estimated_delay,
                 "delayProbability": round(probability, 3),
                 "riskLevel": str(summary["risk_level"]),
+                "delayReason": delay_reason,
+                "passengersWaiting": passengers_waiting,
+                "bottleneckStage": bottleneck_stage,
                 "delayStart": 10 + index * 2,
                 "boardingStart": 54 + index * 3,
                 "gateClosedStart": 70 + index * 3,
@@ -536,6 +554,9 @@ def build_default_control_center_flights() -> list[dict[str, object]]:
             "delayMinutes": delay,
             "delayProbability": 0.58 if delay else 0.22,
             "riskLevel": "High" if delay else "Low",
+            "delayReason": "Security Queue" if delay else "None",
+            "passengersWaiting": 24 + index * 3 if delay else 4 + index,
+            "bottleneckStage": "Security" if delay else "None",
             "delayStart": 10 + index * 2,
             "boardingStart": 54 + index * 3,
             "gateClosedStart": 70 + index * 3,
@@ -1820,9 +1841,12 @@ def build_professional_control_center_html(
               <th>Flight</th>
               <th>Destination</th>
               <th>Gate</th>
-              <th>Scheduled</th>
-              <th>Estimated</th>
+              <th>Scheduled Time</th>
+              <th>Estimated Time</th>
               <th>Status</th>
+              <th>Delay Reason</th>
+              <th>Passengers Waiting</th>
+              <th>Bottleneck Stage</th>
             </tr>
           </thead>
           <tbody id="flight-board-body"></tbody>
@@ -2141,6 +2165,9 @@ def build_professional_control_center_html(
           <td>${formatTime(flight.scheduledMinutes)}</td>
           <td>${formatTime(state.estimatedMinutes)}</td>
           <td><span class="flight-status-badge ${className}">${state.status}</span></td>
+          <td>${flight.delayReason || "None"}</td>
+          <td>${flight.passengersWaiting || 0}</td>
+          <td>${flight.bottleneckStage || "None"}</td>
         </tr>
       `;
     }).join("");
