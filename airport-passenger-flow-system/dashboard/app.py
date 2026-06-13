@@ -13,6 +13,7 @@ import streamlit as st
 import streamlit.components.v1 as components
 
 from advanced_airport import render_advanced_animated_airport_page
+from professional_control_center import render_professional_airport_control_center_page
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 if str(PROJECT_ROOT) not in sys.path:
@@ -1046,6 +1047,7 @@ def main() -> None:
             "Simulation Analytics",
             "Airport Live Simulation",
             "Advanced Animated Airport",
+            "Professional Airport Control Center",
             "ML Prediction",
             "Model Performance",
         ],
@@ -1061,6 +1063,8 @@ def main() -> None:
         render_airport_live_simulation_page()
     elif selected_page == "Advanced Animated Airport":
         render_advanced_animated_airport_page()
+    elif selected_page == "Professional Airport Control Center":
+        render_professional_airport_control_center_page()
     elif selected_page == "ML Prediction":
         render_prediction_page(uploaded_file)
     elif selected_page == "Model Performance":
