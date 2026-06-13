@@ -1124,51 +1124,81 @@ def build_control_center_event_log(
     passenger_ids = [f"P{index:03d}" for index in range(1, 13)]
     for index, passenger_id in enumerate(passenger_ids):
         base_minute = index * 3
+        flight = flight_rows[index % len(flight_rows)]
+        passenger_label = f"{passenger_id} / {flight['flight']}"
         events.extend(
             [
                 {
                     "time": base_minute,
                     "event_type": "Arrival",
-                    "message": f"Passenger {passenger_id} entered airport terminal",
+                    "message": f"{passenger_label} arrived at airport",
                 },
                 {
                     "time": base_minute + 1,
                     "event_type": "Queue Join",
-                    "message": f"Passenger {passenger_id} joined check-in queue",
+                    "message": f"{passenger_label} joined Check-in Queue",
                 },
                 {
                     "time": base_minute + 4,
                     "event_type": "Counter Service",
-                    "message": f"Counter {(index % 3) + 1} serving passenger {passenger_id}",
+                    "message": f"Counter {(index % 3) + 1} serving {passenger_label}",
+                },
+                {
+                    "time": base_minute + 6,
+                    "event_type": "Check-in Clearance",
+                    "message": f"{passenger_label} cleared Check-in",
+                },
+                {
+                    "time": base_minute + 7,
+                    "event_type": "Queue Join",
+                    "message": f"{passenger_label} entered Security Queue",
                 },
                 {
                     "time": base_minute + 8,
                     "event_type": "Security Clearance",
-                    "message": f"Passenger {passenger_id} cleared security lane {(index % 2) + 1}",
+                    "message": f"{passenger_label} waiting at Security for {(3.2 + index * 0.4):.1f} min",
+                },
+                {
+                    "time": base_minute + 10,
+                    "event_type": "Security Clearance",
+                    "message": f"{passenger_label} cleared Security lane {(index % 2) + 1}",
                 },
                 {
                     "time": base_minute + 12,
                     "event_type": "Immigration Clearance",
-                    "message": f"Passenger {passenger_id} cleared immigration counter {(index % 3) + 1}",
+                    "message": f"{passenger_label} cleared Immigration counter {(index % 3) + 1}",
+                },
+                {
+                    "time": base_minute + 15,
+                    "event_type": "Boarding Event",
+                    "message": f"{passenger_label} entered Boarding Queue",
                 },
                 {
                     "time": base_minute + 18,
                     "event_type": "Boarding Event",
-                    "message": f"Passenger {passenger_id} boarded through Gate A{(index % 2) + 1}",
+                    "message": f"{passenger_label} boarded successfully through Gate A{(index % 2) + 1}",
                 },
             ]
         )
 
     for flight in flight_rows:
         if flight["delayMinutes"] > 0 or flight["delayProbability"] >= 0.55:
+            bottleneck = flight.get("bottleneckStage", "Security")
             events.append(
                 {
                     "time": int(flight["delayStart"]),
                     "event_type": "Delay Event",
                     "message": (
-                        f"Flight {flight['flight']} delay risk {flight['delayProbability']:.1%}; "
-                        f"estimated delay {flight['delayMinutes']} minutes"
+                        f"Flight {flight['flight']} delay increased to {flight['delayMinutes']} min; "
+                        f"{bottleneck} overloaded with {flight.get('passengersWaiting', 0)} waiting"
                     ),
+                }
+            )
+            events.append(
+                {
+                    "time": int(flight["delayStart"]) + 1,
+                    "event_type": "Congestion Alert",
+                    "message": f"{bottleneck} overloaded for flight {flight['flight']}",
                 }
             )
 
