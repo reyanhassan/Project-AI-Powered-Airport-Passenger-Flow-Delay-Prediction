@@ -170,6 +170,45 @@ def render_professional_streamlit_css() -> None:
         .pcc-event-message {
             color: #d7eaf5;
         }
+        .pcc-delay-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 12px;
+            margin-bottom: 16px;
+        }
+        .pcc-delay-card {
+            background: #071624;
+            border: 1px solid rgba(248, 113, 113, 0.36);
+            border-left: 5px solid #f87171;
+            border-radius: 8px;
+            padding: 14px;
+        }
+        .pcc-delay-title {
+            color: #ecf8ff;
+            font-size: 18px;
+            font-weight: 900;
+            margin-bottom: 8px;
+        }
+        .pcc-delay-row {
+            display: flex;
+            justify-content: space-between;
+            gap: 12px;
+            border-top: 1px solid rgba(59, 215, 255, 0.12);
+            color: #8ea9bb;
+            font-size: 13px;
+            padding: 7px 0;
+        }
+        .pcc-delay-value {
+            color: #ecf8ff;
+            font-weight: 900;
+            text-align: right;
+        }
+        .pcc-delay-description {
+            color: #d7eaf5;
+            font-size: 13px;
+            line-height: 1.45;
+            margin-top: 8px;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -703,6 +742,111 @@ def render_control_center_analytics(
     chart_col6.plotly_chart(gauge_chart, use_container_width=True)
 
     return analytics
+
+
+def build_delay_explanations(
+    flight_rows: list[dict[str, object]],
+    analytics: dict[str, pd.DataFrame | dict[str, float | int]],
+) -> list[dict[str, object]]:
+    """Explain why delayed flights are delayed in operations language."""
+
+    queue_timeline = analytics["queue_timeline"]
+    wait_times = analytics["wait_times"].set_index("stage")
+    stage_queue_columns = {
+        "Check-in": "check_in_queue",
+        "Security": "security_queue",
+        "Immigration": "immigration_queue",
+        "Boarding": "boarding_queue",
+    }
+    possible_causes = {
+        "Check-in": "Long Check-in Queue",
+        "Security": "Security Bottleneck",
+        "Immigration": "Immigration Bottleneck",
+        "Boarding": "Boarding Bottleneck",
+    }
+
+    explanations = []
+    for flight in flight_rows:
+        if flight["delayMinutes"] <= 0 and flight["delayProbability"] < 0.55:
+            continue
+
+        affected_stage = max(
+            stage_queue_columns,
+            key=lambda stage: queue_timeline[stage_queue_columns[stage]].max(),
+        )
+        passengers_waiting = int(queue_timeline[stage_queue_columns[affected_stage]].max())
+        average_wait = float(wait_times.loc[affected_stage, "average_wait_minutes"])
+        main_reason = possible_causes[affected_stage]
+
+        if flight["riskLevel"] == "High" and flight["delayMinutes"] >= 20:
+            main_reason = "Previous Flight Delay"
+        elif flight["delayProbability"] >= 0.65:
+            main_reason = "High Passenger Arrival Rate"
+        elif flight["delayMinutes"] >= 15 and affected_stage == "Security":
+            main_reason = "Security Bottleneck"
+
+        explanations.append(
+            {
+                "flight": flight["flight"],
+                "delay_minutes": int(flight["delayMinutes"]),
+                "main_reason": main_reason,
+                "affected_stage": affected_stage,
+                "passengers_waiting": passengers_waiting,
+                "bottleneck_description": (
+                    f"{affected_stage} is handling {passengers_waiting} waiting passengers "
+                    f"with an average wait of {average_wait:.1f} minutes."
+                ),
+            }
+        )
+
+    return explanations
+
+
+def render_delay_explanation_center(
+    flight_rows: list[dict[str, object]],
+    analytics: dict[str, pd.DataFrame | dict[str, float | int]],
+) -> None:
+    """Render delayed-flight explanation cards for viva/demo clarity."""
+
+    explanations = build_delay_explanations(flight_rows, analytics)
+    st.markdown(
+        """
+        <div class="pcc-panel">
+            <div class="pcc-panel-title">Why Is This Flight Delayed?</div>
+            <div class="pcc-panel-subtitle">Flight delay reason, affected stage, waiting passengers and bottleneck description</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    if not explanations:
+        st.success("No delayed flights are currently detected.")
+        return
+
+    cards = []
+    for item in explanations:
+        cards.append(
+            (
+                '<div class="pcc-delay-card">'
+                f'<div class="pcc-delay-title">Flight {html.escape(str(item["flight"]))}</div>'
+                '<div class="pcc-delay-row"><span>Delay Minutes</span>'
+                f'<span class="pcc-delay-value">{item["delay_minutes"]}</span></div>'
+                '<div class="pcc-delay-row"><span>Main Delay Reason</span>'
+                f'<span class="pcc-delay-value">{html.escape(str(item["main_reason"]))}</span></div>'
+                '<div class="pcc-delay-row"><span>Affected Airport Stage</span>'
+                f'<span class="pcc-delay-value">{html.escape(str(item["affected_stage"]))}</span></div>'
+                '<div class="pcc-delay-row"><span>Passengers Waiting</span>'
+                f'<span class="pcc-delay-value">{item["passengers_waiting"]}</span></div>'
+                '<div class="pcc-delay-description">'
+                f'{html.escape(str(item["bottleneck_description"]))}'
+                "</div></div>"
+            )
+        )
+
+    st.markdown(
+        f'<div class="pcc-delay-grid">{"".join(cards)}</div>',
+        unsafe_allow_html=True,
+    )
 
 
 def build_control_center_event_log(
@@ -1896,5 +2040,6 @@ def render_professional_airport_control_center_page() -> None:
         height=1380,
         scrolling=True,
     )
-    render_control_center_analytics(flight_rows, prediction_summary)
+    analytics = render_control_center_analytics(flight_rows, prediction_summary)
+    render_delay_explanation_center(flight_rows, analytics)
     render_control_center_event_log(flight_rows)
