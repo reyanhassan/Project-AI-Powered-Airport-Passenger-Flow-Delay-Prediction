@@ -1,5 +1,6 @@
 """Professional Airport Control Center page for the Streamlit dashboard."""
 
+import html
 import json
 from pathlib import Path
 import sys
@@ -91,6 +92,41 @@ def render_professional_streamlit_css() -> None:
         .pcc-panel-subtitle {
             color: #8ea9bb;
             font-size: 13px;
+        }
+        .pcc-event-log {
+            max-height: 380px;
+            overflow-y: auto;
+            border: 1px solid rgba(59, 215, 255, 0.28);
+            border-radius: 8px;
+            background: #030914;
+            padding: 8px;
+            margin-top: 12px;
+        }
+        .pcc-event-row {
+            display: grid;
+            grid-template-columns: 82px 150px 1fr;
+            gap: 10px;
+            align-items: center;
+            border-bottom: 1px solid rgba(59, 215, 255, 0.12);
+            color: #ecf8ff;
+            font-size: 13px;
+            padding: 9px 6px;
+        }
+        .pcc-event-row:last-child {
+            border-bottom: none;
+        }
+        .pcc-event-time {
+            color: #3bd7ff;
+            font-weight: 900;
+        }
+        .pcc-event-type {
+            color: #ffd166;
+            font-weight: 900;
+            text-transform: uppercase;
+            font-size: 11px;
+        }
+        .pcc-event-message {
+            color: #d7eaf5;
         }
         </style>
         """,
@@ -624,6 +660,101 @@ def render_control_center_analytics(
     chart_col6.plotly_chart(gauge_chart, use_container_width=True)
 
     return analytics
+
+
+def build_control_center_event_log(
+    flight_rows: list[dict[str, object]],
+) -> pd.DataFrame:
+    """Build live-style event messages for passenger and delay operations."""
+
+    events = []
+    passenger_ids = [f"P{index:03d}" for index in range(1, 13)]
+    for index, passenger_id in enumerate(passenger_ids):
+        base_minute = index * 3
+        events.extend(
+            [
+                {
+                    "time": base_minute,
+                    "event_type": "Arrival",
+                    "message": f"Passenger {passenger_id} entered airport terminal",
+                },
+                {
+                    "time": base_minute + 1,
+                    "event_type": "Queue Join",
+                    "message": f"Passenger {passenger_id} joined check-in queue",
+                },
+                {
+                    "time": base_minute + 4,
+                    "event_type": "Counter Service",
+                    "message": f"Counter {(index % 3) + 1} serving passenger {passenger_id}",
+                },
+                {
+                    "time": base_minute + 8,
+                    "event_type": "Security Clearance",
+                    "message": f"Passenger {passenger_id} cleared security lane {(index % 2) + 1}",
+                },
+                {
+                    "time": base_minute + 12,
+                    "event_type": "Immigration Clearance",
+                    "message": f"Passenger {passenger_id} cleared immigration counter {(index % 3) + 1}",
+                },
+                {
+                    "time": base_minute + 18,
+                    "event_type": "Boarding Event",
+                    "message": f"Passenger {passenger_id} boarded through Gate A{(index % 2) + 1}",
+                },
+            ]
+        )
+
+    for flight in flight_rows:
+        if flight["delayMinutes"] > 0 or flight["delayProbability"] >= 0.55:
+            events.append(
+                {
+                    "time": int(flight["delayStart"]),
+                    "event_type": "Delay Event",
+                    "message": (
+                        f"Flight {flight['flight']} delay risk {flight['delayProbability']:.1%}; "
+                        f"estimated delay {flight['delayMinutes']} minutes"
+                    ),
+                }
+            )
+
+    event_log = pd.DataFrame(events).sort_values(["time", "event_type"]).reset_index(drop=True)
+    event_log["display_time"] = event_log["time"].apply(lambda minute: f"T+{minute:03d}m")
+    return event_log[["display_time", "event_type", "message"]]
+
+
+def render_control_center_event_log(flight_rows: list[dict[str, object]]) -> pd.DataFrame:
+    """Render a scrolling airport operations event log."""
+
+    event_log = build_control_center_event_log(flight_rows)
+    rows = []
+    for _, event in event_log.iterrows():
+        rows.append(
+            (
+                '<div class="pcc-event-row">'
+                f'<div class="pcc-event-time">{html.escape(str(event["display_time"]))}</div>'
+                f'<div class="pcc-event-type">{html.escape(str(event["event_type"]))}</div>'
+                f'<div class="pcc-event-message">{html.escape(str(event["message"]))}</div>'
+                "</div>"
+            )
+        )
+
+    st.markdown(
+        """
+        <div class="pcc-panel">
+            <div class="pcc-panel-title">Live Event Log</div>
+            <div class="pcc-panel-subtitle">Passenger arrivals, queues, service milestones, boarding and delay alerts</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        f'<div class="pcc-event-log">{"".join(rows)}</div>',
+        unsafe_allow_html=True,
+    )
+
+    return event_log
 
 
 def build_professional_control_center_html(
@@ -1564,3 +1695,4 @@ def render_professional_airport_control_center_page() -> None:
         scrolling=True,
     )
     render_control_center_analytics(flight_rows, prediction_summary)
+    render_control_center_event_log(flight_rows)
