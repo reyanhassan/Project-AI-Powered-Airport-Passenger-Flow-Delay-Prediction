@@ -29,12 +29,54 @@ RAW_DELAY_DATA_PATH = PROJECT_ROOT / "data" / "raw" / "airline_delay_realistic.c
 CLEAN_DELAY_DATA_PATH = PROJECT_ROOT / "data" / "processed" / "airline_delay_cleaned.csv"
 MODEL_INPUT_COLUMNS = CATEGORICAL_COLUMNS + NUMERIC_COLUMNS
 CONTROL_CENTER_FLIGHT_TEMPLATES = [
-    {"flight": "PK-302", "gate": "A1", "minute": 10, "phaseOffset": 0},
-    {"flight": "AP-144", "gate": "A2", "minute": 25, "phaseOffset": 8},
-    {"flight": "SA-781", "gate": "B3", "minute": 40, "phaseOffset": 34},
-    {"flight": "ER-219", "gate": "C1", "minute": 5, "phaseOffset": 8},
-    {"flight": "GB-508", "gate": "A4", "minute": 20, "phaseOffset": 72},
-    {"flight": "PK-419", "gate": "D2", "minute": 35, "phaseOffset": 99},
+    {
+        "flight": "PK-302",
+        "destination": "Lahore",
+        "gate": "A1",
+        "minute": 10,
+        "phaseOffset": 0,
+        "color": "#38bdf8",
+    },
+    {
+        "flight": "AP-144",
+        "destination": "New York",
+        "gate": "A2",
+        "minute": 25,
+        "phaseOffset": 8,
+        "color": "#f472b6",
+    },
+    {
+        "flight": "SA-781",
+        "destination": "Doha",
+        "gate": "B3",
+        "minute": 40,
+        "phaseOffset": 34,
+        "color": "#a78bfa",
+    },
+    {
+        "flight": "ER-219",
+        "destination": "Dubai",
+        "gate": "C1",
+        "minute": 5,
+        "phaseOffset": 8,
+        "color": "#34d399",
+    },
+    {
+        "flight": "GB-508",
+        "destination": "Singapore",
+        "gate": "A4",
+        "minute": 20,
+        "phaseOffset": 72,
+        "color": "#facc15",
+    },
+    {
+        "flight": "PK-419",
+        "destination": "London",
+        "gate": "D2",
+        "minute": 35,
+        "phaseOffset": 99,
+        "color": "#fb7185",
+    },
 ]
 AIRPORT_DESTINATIONS = {
     "BKK": "Bangkok",
@@ -400,7 +442,7 @@ def build_control_center_flight_rows(
         flight_rows.append(
             {
                 "flight": str(template["flight"]),
-                "destination": _destination_name(str(row["destination_airport"])),
+                "destination": str(template["destination"]),
                 "gate": str(template["gate"]),
                 "scheduledMinutes": scheduled_minutes,
                 "delayMinutes": estimated_delay,
@@ -411,6 +453,7 @@ def build_control_center_flight_rows(
                 "gateClosedStart": 70 + index * 3,
                 "departedStart": 82 + index * 4,
                 "phaseOffset": int(template["phaseOffset"]),
+                "color": str(template["color"]),
             }
         )
 
@@ -423,7 +466,7 @@ def build_default_control_center_flights() -> list[dict[str, object]]:
     return [
         {
             "flight": str(template["flight"]),
-            "destination": destination,
+            "destination": str(template["destination"]),
             "gate": str(template["gate"]),
             "scheduledMinutes": (9 + index // 3) * 60 + int(template["minute"]),
             "delayMinutes": delay,
@@ -434,11 +477,11 @@ def build_default_control_center_flights() -> list[dict[str, object]]:
             "gateClosedStart": 70 + index * 3,
             "departedStart": 82 + index * 4,
             "phaseOffset": int(template["phaseOffset"]),
+            "color": str(template["color"]),
         }
-        for index, (template, destination, delay) in enumerate(
+        for index, (template, delay) in enumerate(
             zip(
                 CONTROL_CENTER_FLIGHT_TEMPLATES,
-                ["Karachi", "Lahore", "Dubai", "Islamabad", "Doha", "Jeddah"],
                 [0, 18, 0, 24, 0, 35],
             )
         )
@@ -993,7 +1036,7 @@ def build_professional_control_center_html(
     z-index: 20;
   }
   .passenger::after {
-    content: attr(data-id);
+    content: attr(data-label);
     position: absolute;
     top: 21px;
     left: 50%;
@@ -1017,6 +1060,22 @@ def build_professional_control_center_html(
     background: rgba(59, 215, 255, 0.72);
     box-shadow: 0 0 11px rgba(59, 215, 255, 0.7);
     z-index: 8;
+  }
+  .flight-group-strip {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+  }
+  .flight-group-badge {
+    border: 1px solid rgba(59, 215, 255, 0.25);
+    border-left: 5px solid var(--flight-color);
+    border-radius: 8px;
+    background: rgba(7, 22, 36, 0.88);
+    color: #eefaff;
+    font-size: 12px;
+    font-weight: 900;
+    padding: 7px 10px;
   }
   .operations-grid {
     display: grid;
@@ -1300,6 +1359,7 @@ def build_professional_control_center_html(
       <span>Green dots: boarded</span>
       <span>Progress bars activate at counters</span>
     </div>
+    <div class="flight-group-strip" id="flight-group-strip" aria-label="Flight Passenger Groups"></div>
     <div class="operations-grid">
       <section class="control-panel">
         <div class="panel-header">
@@ -1434,6 +1494,7 @@ def build_professional_control_center_html(
   const bottleneckAlert = document.getElementById("bottleneck-alert");
   const flightBoardBody = document.getElementById("flight-board-body");
   const flightClock = document.getElementById("flight-clock");
+  const flightGroupStrip = document.getElementById("flight-group-strip");
   const speedButtons = Array.from(document.querySelectorAll("[data-speed]"));
   const modeButtons = Array.from(document.querySelectorAll("[data-mode]"));
   const nextStepButton = document.getElementById("next-step-button");
@@ -1535,10 +1596,24 @@ def build_professional_control_center_html(
 
   function createPassenger(index) {
     const element = document.createElement("div");
+    const flight = flights[index % flights.length];
+    const passengerId = `P${String(index + 1).padStart(3, "0")}`;
     element.className = "passenger";
-    element.dataset.id = `P${String(index + 1).padStart(3, "0")}`;
+    element.dataset.id = passengerId;
+    element.dataset.flight = flight.flight;
+    element.dataset.label = `${passengerId} / ${flight.flight}`;
+    element.style.background = flight.color || "var(--yellow)";
+    element.style.borderColor = flight.color || "#fff0b8";
     map.appendChild(element);
-    return { index, element, delay: index * 0.45 };
+    return { index, element, delay: index * 0.45, flight };
+  }
+
+  function renderFlightGroups() {
+    flightGroupStrip.innerHTML = flights.map((flight) => `
+      <span class="flight-group-badge" style="--flight-color:${flight.color || "#3bd7ff"}">
+        ${flight.flight} / ${flight.destination}
+      </span>
+    `).join("");
   }
 
   function createQueueDots() {
@@ -1611,7 +1686,7 @@ def build_professional_control_center_html(
     return {
       card,
       resource,
-      passenger: activePassenger ? activePassenger.passenger.element.dataset.id : "None",
+      passenger: activePassenger ? activePassenger.passenger.element.dataset.label : "None",
       queueLength,
       averageWait,
       remaining,
@@ -1735,6 +1810,7 @@ def build_professional_control_center_html(
   });
 
   createQueueDots();
+  renderFlightGroups();
   const passengers = Array.from({ length: passengerCount }, (_, index) => createPassenger(index));
   let simulationElapsed = 0;
   let lastFrameTime = performance.now();
