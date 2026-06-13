@@ -1,5 +1,6 @@
 """Professional Airport Control Center page for the Streamlit dashboard."""
 
+import json
 from pathlib import Path
 import sys
 
@@ -24,6 +25,26 @@ BEST_MODEL_PATH = PROJECT_ROOT / "ml" / "models" / "best_delay_model.joblib"
 RAW_DELAY_DATA_PATH = PROJECT_ROOT / "data" / "raw" / "airline_delay_realistic.csv"
 CLEAN_DELAY_DATA_PATH = PROJECT_ROOT / "data" / "processed" / "airline_delay_cleaned.csv"
 MODEL_INPUT_COLUMNS = CATEGORICAL_COLUMNS + NUMERIC_COLUMNS
+CONTROL_CENTER_FLIGHT_TEMPLATES = [
+    {"flight": "PK-302", "gate": "A1", "minute": 10, "phaseOffset": 0},
+    {"flight": "AP-144", "gate": "A2", "minute": 25, "phaseOffset": 8},
+    {"flight": "SA-781", "gate": "B3", "minute": 40, "phaseOffset": 34},
+    {"flight": "ER-219", "gate": "C1", "minute": 5, "phaseOffset": 8},
+    {"flight": "GB-508", "gate": "A4", "minute": 20, "phaseOffset": 72},
+    {"flight": "PK-419", "gate": "D2", "minute": 35, "phaseOffset": 99},
+]
+AIRPORT_DESTINATIONS = {
+    "BKK": "Bangkok",
+    "DOH": "Doha",
+    "DXB": "Dubai",
+    "ISB": "Islamabad",
+    "IST": "Istanbul",
+    "JFK": "New York",
+    "KHI": "Karachi",
+    "LHE": "Lahore",
+    "LHR": "London",
+    "SIN": "Singapore",
+}
 
 
 @st.cache_resource
@@ -282,10 +303,119 @@ def render_delay_prediction_section(
     return model_input, summary
 
 
-def build_professional_control_center_html() -> str:
+def _destination_name(airport_code: str) -> str:
+    """Return a friendly destination name for the flight board."""
+
+    return AIRPORT_DESTINATIONS.get(airport_code, airport_code)
+
+
+def build_control_center_flight_rows(
+    delay_data: pd.DataFrame,
+    model,
+    selected_input: pd.DataFrame,
+) -> list[dict[str, object]]:
+    """Create flight-board rows from the current ML model predictions."""
+
+    if delay_data.empty:
+        source_rows = selected_input.copy()
+    else:
+        sample_rows = delay_data[MODEL_INPUT_COLUMNS].sample(
+            n=min(5, len(delay_data)),
+            random_state=13,
+        )
+        source_rows = pd.concat([selected_input, sample_rows], ignore_index=True)
+
+    if source_rows.empty:
+        source_rows = pd.DataFrame(
+            [
+                {
+                    "airline": "PIA",
+                    "origin_airport": "ISB",
+                    "destination_airport": "KHI",
+                    "flight_day": "Monday",
+                    "scheduled_hour": 9,
+                    "weather_condition": "Clear",
+                    "passenger_count": 160,
+                    "previous_delay_minutes": 0,
+                    "security_wait_minutes": 15,
+                    "gate_changes": 0,
+                }
+            ]
+        )
+
+    flight_rows = []
+    for index, (_, row) in enumerate(source_rows.head(6).iterrows()):
+        template = CONTROL_CENTER_FLIGHT_TEMPLATES[index % len(CONTROL_CENTER_FLIGHT_TEMPLATES)]
+        model_input = pd.DataFrame([row[MODEL_INPUT_COLUMNS].to_dict()])
+        summary = predict_delay_summary(model, model_input)
+        probability = float(summary["delay_probability"])
+        estimated_delay = int(summary["estimated_delay_minutes"])
+
+        if probability >= 0.55 and estimated_delay == 0:
+            estimated_delay = 8
+        elif probability < 0.35:
+            estimated_delay = 0
+
+        scheduled_hour = int(row["scheduled_hour"])
+        scheduled_minutes = scheduled_hour * 60 + int(template["minute"])
+
+        flight_rows.append(
+            {
+                "flight": str(template["flight"]),
+                "destination": _destination_name(str(row["destination_airport"])),
+                "gate": str(template["gate"]),
+                "scheduledMinutes": scheduled_minutes,
+                "delayMinutes": estimated_delay,
+                "delayProbability": round(probability, 3),
+                "riskLevel": str(summary["risk_level"]),
+                "delayStart": 10 + index * 2,
+                "boardingStart": 54 + index * 3,
+                "gateClosedStart": 70 + index * 3,
+                "departedStart": 82 + index * 4,
+                "phaseOffset": int(template["phaseOffset"]),
+            }
+        )
+
+    return flight_rows
+
+
+def build_default_control_center_flights() -> list[dict[str, object]]:
+    """Provide flight rows if model data is unavailable."""
+
+    return [
+        {
+            "flight": str(template["flight"]),
+            "destination": destination,
+            "gate": str(template["gate"]),
+            "scheduledMinutes": (9 + index // 3) * 60 + int(template["minute"]),
+            "delayMinutes": delay,
+            "delayProbability": 0.58 if delay else 0.22,
+            "riskLevel": "High" if delay else "Low",
+            "delayStart": 10 + index * 2,
+            "boardingStart": 54 + index * 3,
+            "gateClosedStart": 70 + index * 3,
+            "departedStart": 82 + index * 4,
+            "phaseOffset": int(template["phaseOffset"]),
+        }
+        for index, (template, destination, delay) in enumerate(
+            zip(
+                CONTROL_CENTER_FLIGHT_TEMPLATES,
+                ["Karachi", "Lahore", "Dubai", "Islamabad", "Doha", "Jeddah"],
+                [0, 18, 0, 24, 0, 35],
+            )
+        )
+    ]
+
+
+def build_professional_control_center_html(
+    flight_data: list[dict[str, object]] | None = None,
+) -> str:
     """Build the HTML/CSS/JavaScript airport control center component."""
 
-    return """
+    flight_rows = flight_data or build_default_control_center_flights()
+    flights_json = json.dumps(flight_rows)
+
+    html_template = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -911,14 +1041,7 @@ def build_professional_control_center_html() -> str:
     { id: "boarding-0", group: "boarding", label: "Boarding Gate A1", index: 0, count: 2, serviceStage: "boardingGate", queue: "boarding", baseWait: 1.6, waitFactor: 0.72, serviceMinutes: 3.8, busyAt: 2, overloadAt: 5 },
     { id: "boarding-1", group: "boarding", label: "Boarding Gate A2", index: 1, count: 2, serviceStage: "boardingGate", queue: "boarding", baseWait: 1.6, waitFactor: 0.72, serviceMinutes: 3.8, busyAt: 2, overloadAt: 5, opensAfter: 28 }
   ];
-  const flights = [
-    { flight: "PK-302", destination: "Karachi", gate: "A1", scheduledMinutes: 9 * 60 + 10, delayMinutes: 0, delayStart: 12, boardingStart: 24, gateClosedStart: 43, departedStart: 58, phaseOffset: 0 },
-    { flight: "AP-144", destination: "Lahore", gate: "A2", scheduledMinutes: 9 * 60 + 25, delayMinutes: 18, delayStart: 10, boardingStart: 54, gateClosedStart: 70, departedStart: 82, phaseOffset: 8 },
-    { flight: "SA-781", destination: "Dubai", gate: "B3", scheduledMinutes: 9 * 60 + 40, delayMinutes: 0, delayStart: 16, boardingStart: 36, gateClosedStart: 55, departedStart: 72, phaseOffset: 34 },
-    { flight: "ER-219", destination: "Islamabad", gate: "C1", scheduledMinutes: 10 * 60 + 5, delayMinutes: 24, delayStart: 18, boardingStart: 66, gateClosedStart: 80, departedStart: 92, phaseOffset: 8 },
-    { flight: "GB-508", destination: "Doha", gate: "A4", scheduledMinutes: 10 * 60 + 20, delayMinutes: 0, delayStart: 24, boardingStart: 52, gateClosedStart: 75, departedStart: 90, phaseOffset: 72 },
-    { flight: "PK-419", destination: "Jeddah", gate: "D2", scheduledMinutes: 10 * 60 + 35, delayMinutes: 35, delayStart: 22, boardingStart: 78, gateClosedStart: 94, departedStart: 108, phaseOffset: 99 }
-  ];
+  const flights = __FLIGHT_DATA__;
   const points = {
     entrance: { x: 82, y: 370 },
     checkinQueue: { x: 238, y: 370 },
@@ -1126,7 +1249,7 @@ def build_professional_control_center_html() -> str:
 
   function flightStatusFor(flight, elapsed) {
     const cycle = (elapsed + (flight.phaseOffset || 0)) % 116;
-    const hasDelay = flight.delayMinutes > 0;
+    const hasDelay = flight.delayMinutes > 0 || flight.delayProbability >= 0.55;
     let status = "ON TIME";
     let estimatedMinutes = flight.scheduledMinutes;
 
@@ -1204,6 +1327,7 @@ def build_professional_control_center_html() -> str:
 </body>
 </html>
 """
+    return html_template.replace("__FLIGHT_DATA__", flights_json)
 
 
 def render_professional_airport_control_center_page() -> None:
@@ -1212,6 +1336,11 @@ def render_professional_airport_control_center_page() -> None:
     render_professional_streamlit_css()
     delay_data = load_professional_delay_data()
     model = load_professional_delay_model()
-    render_delay_prediction_section(delay_data, model)
+    selected_input, _ = render_delay_prediction_section(delay_data, model)
+    flight_rows = build_control_center_flight_rows(delay_data, model, selected_input)
 
-    components.html(build_professional_control_center_html(), height=1380, scrolling=True)
+    components.html(
+        build_professional_control_center_html(flight_rows),
+        height=1380,
+        scrolling=True,
+    )
