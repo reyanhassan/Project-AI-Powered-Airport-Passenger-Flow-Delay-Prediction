@@ -977,6 +977,62 @@ def render_stage_waiting_analytics(
     return stage_data
 
 
+def render_bottleneck_heatmap(stage_data: pd.DataFrame) -> None:
+    """Render green/yellow/red bottleneck severity by airport stage."""
+
+    heatmap_data = stage_data[stage_data["stage"].isin(["Check-in", "Security", "Immigration", "Boarding"])].copy()
+    severity_map = {"Normal": 1, "Busy": 2, "Overloaded": 3}
+    heatmap_data["severity"] = heatmap_data["status"].map(severity_map)
+    heatmap_data["label"] = heatmap_data.apply(
+        lambda row: (
+            f"{row['stage']}<br>{row['status']}<br>"
+            f"{int(row['waiting_passengers'])} waiting<br>"
+            f"Avg wait {float(row['average_wait']):.1f} min"
+        ),
+        axis=1,
+    )
+
+    figure = go.Figure(
+        data=go.Heatmap(
+            z=[heatmap_data["severity"].tolist()],
+            x=heatmap_data["stage"].tolist(),
+            y=["Bottleneck"],
+            text=[heatmap_data["label"].tolist()],
+            texttemplate="%{text}",
+            textfont={"color": "#ecf8ff", "size": 13},
+            colorscale=[
+                [0.0, "#12382d"],
+                [0.34, "#12382d"],
+                [0.35, "#3a3212"],
+                [0.67, "#3a3212"],
+                [0.68, "#3d1519"],
+                [1.0, "#3d1519"],
+            ],
+            showscale=False,
+            zmin=1,
+            zmax=3,
+        )
+    )
+    figure.update_layout(
+        title="Bottleneck Heatmap",
+        template="plotly_dark",
+        height=260,
+        margin={"l": 20, "r": 20, "t": 50, "b": 20},
+        xaxis={"side": "top"},
+    )
+
+    st.markdown(
+        """
+        <div class="pcc-panel">
+            <div class="pcc-panel-title">Bottleneck Heatmap</div>
+            <div class="pcc-panel-subtitle">Green = Normal, Yellow = Busy, Red = Overloaded</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.plotly_chart(figure, use_container_width=True)
+
+
 def build_control_center_event_log(
     flight_rows: list[dict[str, object]],
 ) -> pd.DataFrame:
@@ -2170,5 +2226,6 @@ def render_professional_airport_control_center_page() -> None:
     )
     analytics = render_control_center_analytics(flight_rows, prediction_summary)
     render_delay_explanation_center(flight_rows, analytics)
-    render_stage_waiting_analytics(flight_rows, analytics)
+    stage_data = render_stage_waiting_analytics(flight_rows, analytics)
+    render_bottleneck_heatmap(stage_data)
     render_control_center_event_log(flight_rows)
