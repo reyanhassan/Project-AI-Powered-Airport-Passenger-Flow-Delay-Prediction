@@ -831,6 +831,45 @@ def build_professional_control_center_html(
     font-weight: 900;
     box-shadow: 0 0 24px rgba(59, 215, 255, 0.12);
   }
+  .sim-control-strip {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    border: 1px solid rgba(59, 215, 255, 0.32);
+    border-radius: 10px;
+    background: rgba(7, 22, 36, 0.86);
+    padding: 10px 12px;
+    margin-bottom: 14px;
+  }
+  .sim-control-title {
+    color: #f3fbff;
+    font-size: 13px;
+    font-weight: 900;
+    text-transform: uppercase;
+  }
+  .sim-control-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .sim-button {
+    border: 1px solid rgba(59, 215, 255, 0.38);
+    border-radius: 8px;
+    background: rgba(3, 9, 20, 0.64);
+    color: var(--muted);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 900;
+    padding: 8px 11px;
+    transition: border-color 0.2s ease, color 0.2s ease, background 0.2s ease;
+  }
+  .sim-button.active {
+    border-color: rgba(59, 215, 255, 0.9);
+    background: rgba(59, 215, 255, 0.18);
+    color: var(--neon);
+    box-shadow: 0 0 16px rgba(59, 215, 255, 0.16);
+  }
   .airport-map {
     position: relative;
     height: 760px;
@@ -1221,6 +1260,18 @@ def build_professional_control_center_html(
       </div>
       <div class="system-chip">TERMINAL OPS ONLINE</div>
     </div>
+    <div class="sim-control-strip" aria-label="Simulation Speed Control">
+      <div>
+        <div class="sim-control-title">Simulation Speed Control</div>
+        <div class="subtitle">Default: Slow | changes apply immediately</div>
+      </div>
+      <div class="sim-control-buttons">
+        <button class="sim-button" data-speed="0.25">Very Slow</button>
+        <button class="sim-button active" data-speed="0.65">Slow</button>
+        <button class="sim-button" data-speed="1.12">Normal</button>
+        <button class="sim-button" data-speed="2.1">Fast</button>
+      </div>
+    </div>
     <div class="airport-map" id="airport-map">
       <div class="route main"></div>
       <div class="route down"></div>
@@ -1376,8 +1427,9 @@ def build_professional_control_center_html(
   const bottleneckAlert = document.getElementById("bottleneck-alert");
   const flightBoardBody = document.getElementById("flight-board-body");
   const flightClock = document.getElementById("flight-clock");
+  const speedButtons = Array.from(document.querySelectorAll("[data-speed]"));
   const passengerCount = 46;
-  const speed = 1.12;
+  let speed = 0.65;
   let lastFlightTick = -1;
   const resources = [
     { id: "checkin-0", group: "checkin", label: "Check-in Counter 1", index: 0, count: 3, serviceStage: "checkinCounter", queue: "checkin", baseWait: 2.4, waitFactor: 0.85, serviceMinutes: 3.4, busyAt: 2, overloadAt: 5 },
@@ -1645,12 +1697,24 @@ def build_professional_control_center_html(
     }).join("");
   }
 
+  speedButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      speed = Number(button.dataset.speed);
+      speedButtons.forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
+    });
+  });
+
   createQueueDots();
   const passengers = Array.from({ length: passengerCount }, (_, index) => createPassenger(index));
-  const startedAt = performance.now();
+  let simulationElapsed = 0;
+  let lastFrameTime = performance.now();
 
   function animate(now) {
-    const elapsed = ((now - startedAt) / 1000) * speed;
+    const frameDelta = Math.min((now - lastFrameTime) / 1000, 0.08);
+    lastFrameTime = now;
+    simulationElapsed += frameDelta * speed;
+    const elapsed = simulationElapsed;
     const passengerStates = [];
     resetProgressBars();
     passengers.forEach((passenger) => {
