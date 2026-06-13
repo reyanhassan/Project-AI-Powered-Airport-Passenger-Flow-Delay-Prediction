@@ -323,6 +323,33 @@ def build_professional_control_center_html() -> str:
     background: rgba(100, 116, 139, 0.2);
     color: #cbd5e1;
   }
+  .bottleneck-alert {
+    border: 1px solid rgba(52, 211, 153, 0.44);
+    border-radius: 8px;
+    background: rgba(52, 211, 153, 0.1);
+    color: var(--green);
+    padding: 9px 11px;
+    min-width: 260px;
+    text-align: right;
+    font-size: 12px;
+    font-weight: 900;
+  }
+  .bottleneck-alert.busy {
+    border-color: rgba(251, 191, 36, 0.58);
+    background: rgba(251, 191, 36, 0.12);
+    color: var(--busy);
+  }
+  .bottleneck-alert.overloaded {
+    border-color: rgba(248, 113, 113, 0.7);
+    background: rgba(248, 113, 113, 0.13);
+    color: var(--red);
+    animation: overloadPulse 0.75s infinite alternate;
+  }
+  .bottleneck-alert.closed {
+    border-color: rgba(100, 116, 139, 0.54);
+    background: rgba(100, 116, 139, 0.12);
+    color: #cbd5e1;
+  }
   .resource-row {
     display: flex;
     justify-content: space-between;
@@ -382,6 +409,7 @@ def build_professional_control_center_html() -> str:
             <div class="panel-title">Resource Operations Monitor</div>
             <div class="panel-subtitle">Live service state for counters, lanes, immigration and gates</div>
           </div>
+          <div class="bottleneck-alert" id="bottleneck-alert">NORMAL FLOW</div>
         </div>
         <div class="resource-groups">
           <div class="resource-group">
@@ -482,8 +510,22 @@ def build_professional_control_center_html() -> str:
 (() => {
   const map = document.getElementById("airport-map");
   const progressBars = Array.from(document.querySelectorAll(".service-desk .progress"));
+  const resourceCards = Array.from(document.querySelectorAll(".resource-card"));
+  const bottleneckAlert = document.getElementById("bottleneck-alert");
   const passengerCount = 46;
   const speed = 1.12;
+  const resources = [
+    { id: "checkin-0", group: "checkin", label: "Check-in Counter 1", index: 0, count: 3, serviceStage: "checkinCounter", queue: "checkin", baseWait: 2.4, waitFactor: 0.85, serviceMinutes: 3.4, busyAt: 2, overloadAt: 5 },
+    { id: "checkin-1", group: "checkin", label: "Check-in Counter 2", index: 1, count: 3, serviceStage: "checkinCounter", queue: "checkin", baseWait: 2.4, waitFactor: 0.85, serviceMinutes: 3.4, busyAt: 2, overloadAt: 5 },
+    { id: "checkin-2", group: "checkin", label: "Check-in Counter 3", index: 2, count: 3, serviceStage: "checkinCounter", queue: "checkin", baseWait: 2.4, waitFactor: 0.85, serviceMinutes: 3.4, busyAt: 2, overloadAt: 5 },
+    { id: "security-0", group: "security", label: "Security Lane 1", index: 0, count: 2, serviceStage: "securityLane", queue: "security", baseWait: 3.1, waitFactor: 1.15, serviceMinutes: 3.2, busyAt: 2, overloadAt: 4 },
+    { id: "security-1", group: "security", label: "Security Lane 2", index: 1, count: 2, serviceStage: "securityLane", queue: "security", baseWait: 3.1, waitFactor: 1.15, serviceMinutes: 3.2, busyAt: 2, overloadAt: 4 },
+    { id: "immigration-0", group: "immigration", label: "Immigration Counter 1", index: 0, count: 3, serviceStage: "immigrationCounter", queue: "immigration", baseWait: 3.8, waitFactor: 1.05, serviceMinutes: 3.8, busyAt: 2, overloadAt: 5 },
+    { id: "immigration-1", group: "immigration", label: "Immigration Counter 2", index: 1, count: 3, serviceStage: "immigrationCounter", queue: "immigration", baseWait: 3.8, waitFactor: 1.05, serviceMinutes: 3.8, busyAt: 2, overloadAt: 5 },
+    { id: "immigration-2", group: "immigration", label: "Immigration Counter 3", index: 2, count: 3, serviceStage: "immigrationCounter", queue: "immigration", baseWait: 3.8, waitFactor: 1.05, serviceMinutes: 3.8, busyAt: 2, overloadAt: 5, closesAfter: 62 },
+    { id: "boarding-0", group: "boarding", label: "Boarding Gate A1", index: 0, count: 2, serviceStage: "boardingGate", queue: "boarding", baseWait: 1.6, waitFactor: 0.72, serviceMinutes: 3.8, busyAt: 2, overloadAt: 5 },
+    { id: "boarding-1", group: "boarding", label: "Boarding Gate A2", index: 1, count: 2, serviceStage: "boardingGate", queue: "boarding", baseWait: 1.6, waitFactor: 0.72, serviceMinutes: 3.8, busyAt: 2, overloadAt: 5, opensAfter: 28 }
+  ];
   const points = {
     entrance: { x: 82, y: 370 },
     checkinQueue: { x: 238, y: 370 },
@@ -588,12 +630,106 @@ def build_professional_control_center_html() -> str:
     if (progressBars[barIndex]) progressBars[barIndex].style.width = `${Math.round(progress * 100)}%`;
   }
 
+  function field(card, name) {
+    return card.querySelector(`[data-field="${name}"]`);
+  }
+
+  function setResourceStatus(card, status) {
+    const className = status.toLowerCase();
+    const statusField = field(card, "status");
+    card.classList.remove("busy", "overloaded", "closed");
+    statusField.classList.remove("busy", "overloaded", "closed");
+    if (className !== "open") {
+      card.classList.add(className);
+      statusField.classList.add(className);
+    }
+    statusField.textContent = status;
+  }
+
+  function isClosed(resource, elapsed) {
+    if (resource.opensAfter && elapsed < resource.opensAfter) return true;
+    if (resource.closesAfter && elapsed > resource.closesAfter) return true;
+    return false;
+  }
+
+  function buildResourceState(resource, passengerStates, elapsed) {
+    const card = resourceCards.find((item) => item.dataset.resource === resource.id);
+    const closed = isClosed(resource, elapsed);
+    const queuedPassengers = passengerStates.filter((item) => (
+      item.state.stage.queue === resource.queue && item.passenger.index % resource.count === resource.index
+    ));
+    const activePassenger = passengerStates.find((item) => (
+      item.state.stage.name === resource.serviceStage && item.passenger.index % resource.count === resource.index
+    ));
+    const queueLength = closed ? 0 : queuedPassengers.length;
+    const remaining = activePassenger ? Math.max(0, resource.serviceMinutes * (1 - activePassenger.state.progress)) : 0;
+    const averageWait = closed ? 0 : resource.baseWait + queueLength * resource.waitFactor + (activePassenger ? 0.5 : 0);
+    let status = "OPEN";
+
+    if (closed) {
+      status = "CLOSED";
+    } else if (queueLength >= resource.overloadAt) {
+      status = "OVERLOADED";
+    } else if (activePassenger || queueLength >= resource.busyAt) {
+      status = "BUSY";
+    }
+
+    return {
+      card,
+      resource,
+      passenger: activePassenger ? activePassenger.passenger.element.dataset.id : "None",
+      queueLength,
+      averageWait,
+      remaining,
+      status,
+    };
+  }
+
+  function updateResourceCards(passengerStates, elapsed) {
+    const states = resources.map((resource) => buildResourceState(resource, passengerStates, elapsed));
+    states.forEach((state) => {
+      if (!state.card) return;
+      field(state.card, "passenger").textContent = state.passenger;
+      field(state.card, "queue").textContent = state.queueLength;
+      field(state.card, "wait").textContent = `${state.averageWait.toFixed(1)} min`;
+      field(state.card, "remaining").textContent = `${state.remaining.toFixed(1)} min`;
+      setResourceStatus(state.card, state.status);
+    });
+    updateBottleneckAlert(states);
+  }
+
+  function updateBottleneckAlert(states) {
+    const overloaded = states.filter((state) => state.status === "OVERLOADED");
+    const busy = states.filter((state) => state.status === "BUSY");
+    const closed = states.filter((state) => state.status === "CLOSED");
+    let message = "NORMAL FLOW";
+    let level = "open";
+
+    if (overloaded.length > 0) {
+      const worst = overloaded.sort((left, right) => right.queueLength - left.queueLength)[0];
+      message = `BOTTLENECK: ${worst.resource.label} | Queue ${worst.queueLength}`;
+      level = "overloaded";
+    } else if (busy.length > 0) {
+      const busiest = busy.sort((left, right) => right.queueLength - left.queueLength)[0];
+      message = `BUSY: ${busiest.resource.label} | Queue ${busiest.queueLength}`;
+      level = "busy";
+    } else if (closed.length > 0) {
+      message = `${closed.length} RESOURCE CLOSED`;
+      level = "closed";
+    }
+
+    bottleneckAlert.classList.remove("busy", "overloaded", "closed");
+    if (level !== "open") bottleneckAlert.classList.add(level);
+    bottleneckAlert.textContent = message;
+  }
+
   createQueueDots();
   const passengers = Array.from({ length: passengerCount }, (_, index) => createPassenger(index));
   const startedAt = performance.now();
 
   function animate(now) {
     const elapsed = ((now - startedAt) / 1000) * speed;
+    const passengerStates = [];
     resetProgressBars();
     passengers.forEach((passenger) => {
       const localTime = elapsed - passenger.delay;
@@ -605,8 +741,10 @@ def build_professional_control_center_html() -> str:
       passenger.element.style.opacity = "1";
       passenger.element.style.transform = `translate(${state.position.x}px, ${state.position.y}px)`;
       passenger.element.classList.toggle("boarded", ["aircraft", "boarded"].includes(state.stage.name));
+      passengerStates.push({ passenger, state });
       updateProgress(state.stage, state.progress, passenger.index);
     });
+    updateResourceCards(passengerStates, elapsed);
     requestAnimationFrame(animate);
   }
 
@@ -621,4 +759,4 @@ def build_professional_control_center_html() -> str:
 def render_professional_airport_control_center_page() -> None:
     """Render the professional airport control center page."""
 
-    components.html(build_professional_control_center_html(), height=980, scrolling=True)
+    components.html(build_professional_control_center_html(), height=1380, scrolling=True)
