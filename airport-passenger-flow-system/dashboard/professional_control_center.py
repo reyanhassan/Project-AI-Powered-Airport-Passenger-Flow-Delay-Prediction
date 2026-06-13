@@ -1052,6 +1052,22 @@ def build_professional_control_center_html(
     border-color: #d9ffec;
     box-shadow: 0 0 15px rgba(52, 211, 153, 0.68);
   }
+  .passenger-timer {
+    position: absolute;
+    top: 34px;
+    left: 50%;
+    transform: translateX(-50%);
+    min-width: 86px;
+    border: 1px solid rgba(59, 215, 255, 0.28);
+    border-radius: 6px;
+    background: rgba(3, 9, 20, 0.82);
+    color: #d8f6ff;
+    font-size: 9px;
+    font-weight: 900;
+    padding: 2px 4px;
+    text-align: center;
+    white-space: nowrap;
+  }
   .queue-dot {
     position: absolute;
     width: 8px;
@@ -1594,6 +1610,17 @@ def build_professional_control_center_html(
     return { stage: stages[stages.length - 1], progress: 1, position: points.aircraft };
   }
 
+  function timerText(state) {
+    if (state.stage.queue || state.stage.name === "lounge") {
+      return `Waiting: ${(state.progress * state.stage.duration).toFixed(1)} min`;
+    }
+    if (state.stage.progress || state.stage.name === "aircraft") {
+      const remaining = Math.max(0, state.stage.duration * (1 - state.progress));
+      return `Service Remaining: ${remaining.toFixed(1)} min`;
+    }
+    return "";
+  }
+
   function createPassenger(index) {
     const element = document.createElement("div");
     const flight = flights[index % flights.length];
@@ -1604,8 +1631,11 @@ def build_professional_control_center_html(
     element.dataset.label = `${passengerId} / ${flight.flight}`;
     element.style.background = flight.color || "var(--yellow)";
     element.style.borderColor = flight.color || "#fff0b8";
+    const timer = document.createElement("span");
+    timer.className = "passenger-timer";
+    element.appendChild(timer);
     map.appendChild(element);
-    return { index, element, delay: index * 0.45, flight };
+    return { index, element, timer, delay: index * 0.45, flight };
   }
 
   function renderFlightGroups() {
@@ -1834,6 +1864,7 @@ def build_professional_control_center_html(
       passenger.element.style.opacity = "1";
       passenger.element.style.transform = `translate(${state.position.x}px, ${state.position.y}px)`;
       passenger.element.classList.toggle("boarded", ["aircraft", "boarded"].includes(state.stage.name));
+      passenger.timer.textContent = timerText(state);
       passengerStates.push({ passenger, state });
       updateProgress(state.stage, state.progress, passenger.index);
     });
