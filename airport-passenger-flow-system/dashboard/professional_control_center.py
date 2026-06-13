@@ -635,7 +635,7 @@ def build_professional_control_center_html() -> str:
   ];
   const flights = [
     { flight: "PK-302", destination: "Karachi", gate: "A1", scheduledMinutes: 9 * 60 + 10, delayMinutes: 0, delayStart: 12, boardingStart: 24, gateClosedStart: 43, departedStart: 58, phaseOffset: 0 },
-    { flight: "AP-144", destination: "Lahore", gate: "A2", scheduledMinutes: 9 * 60 + 25, delayMinutes: 18, delayStart: 10, boardingStart: 54, gateClosedStart: 70, departedStart: 82, phaseOffset: 0 },
+    { flight: "AP-144", destination: "Lahore", gate: "A2", scheduledMinutes: 9 * 60 + 25, delayMinutes: 18, delayStart: 10, boardingStart: 54, gateClosedStart: 70, departedStart: 82, phaseOffset: 8 },
     { flight: "SA-781", destination: "Dubai", gate: "B3", scheduledMinutes: 9 * 60 + 40, delayMinutes: 0, delayStart: 16, boardingStart: 36, gateClosedStart: 55, departedStart: 72, phaseOffset: 34 },
     { flight: "ER-219", destination: "Islamabad", gate: "C1", scheduledMinutes: 10 * 60 + 5, delayMinutes: 24, delayStart: 18, boardingStart: 66, gateClosedStart: 80, departedStart: 92, phaseOffset: 8 },
     { flight: "GB-508", destination: "Doha", gate: "A4", scheduledMinutes: 10 * 60 + 20, delayMinutes: 0, delayStart: 24, boardingStart: 52, gateClosedStart: 75, departedStart: 90, phaseOffset: 72 },
