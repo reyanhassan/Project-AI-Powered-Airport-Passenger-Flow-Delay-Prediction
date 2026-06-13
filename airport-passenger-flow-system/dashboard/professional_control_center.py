@@ -26,6 +26,8 @@ def build_professional_control_center_html() -> str:
     --green: #34d399;
     --blue: #3b82f6;
     --red: #f87171;
+    --busy: #fbbf24;
+    --closed: #64748b;
   }
   * { box-sizing: border-box; }
   body {
@@ -215,6 +217,132 @@ def build_professional_control_center_html() -> str:
     box-shadow: 0 0 11px rgba(59, 215, 255, 0.7);
     z-index: 8;
   }
+  .operations-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+    margin-top: 16px;
+  }
+  .control-panel {
+    border: 1px solid rgba(59, 215, 255, 0.32);
+    border-radius: 14px;
+    background: rgba(7, 22, 36, 0.92);
+    box-shadow: 0 18px 44px rgba(0, 0, 0, 0.24);
+    padding: 14px;
+  }
+  .panel-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .panel-title {
+    color: #f4fbff;
+    font-size: 20px;
+    font-weight: 900;
+  }
+  .panel-subtitle {
+    color: var(--muted);
+    font-size: 12px;
+    margin-top: 2px;
+  }
+  .resource-groups {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .resource-group {
+    border: 1px solid rgba(59, 215, 255, 0.22);
+    border-radius: 10px;
+    background: rgba(3, 9, 20, 0.56);
+    padding: 10px;
+  }
+  .resource-group-title {
+    color: var(--neon);
+    font-size: 13px;
+    font-weight: 900;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .resource-stack {
+    display: grid;
+    gap: 8px;
+  }
+  .resource-card {
+    border: 1px solid rgba(52, 211, 153, 0.42);
+    border-left: 5px solid var(--green);
+    border-radius: 8px;
+    background: rgba(11, 32, 49, 0.88);
+    padding: 9px;
+    min-height: 145px;
+    transition: border-color 0.25s ease, box-shadow 0.25s ease, transform 0.25s ease;
+  }
+  .resource-card.busy {
+    border-color: rgba(251, 191, 36, 0.62);
+    border-left-color: var(--busy);
+    box-shadow: 0 0 18px rgba(251, 191, 36, 0.12);
+  }
+  .resource-card.overloaded {
+    border-color: rgba(248, 113, 113, 0.72);
+    border-left-color: var(--red);
+    box-shadow: 0 0 22px rgba(248, 113, 113, 0.2);
+    animation: overloadPulse 1s infinite alternate;
+  }
+  .resource-card.closed {
+    border-color: rgba(100, 116, 139, 0.52);
+    border-left-color: var(--closed);
+    opacity: 0.72;
+  }
+  .resource-name {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    color: #eefaff;
+    font-size: 13px;
+    font-weight: 900;
+    margin-bottom: 7px;
+  }
+  .status-pill {
+    border-radius: 999px;
+    padding: 3px 7px;
+    background: rgba(52, 211, 153, 0.18);
+    color: var(--green);
+    font-size: 10px;
+    font-weight: 900;
+  }
+  .status-pill.busy {
+    background: rgba(251, 191, 36, 0.18);
+    color: var(--busy);
+  }
+  .status-pill.overloaded {
+    background: rgba(248, 113, 113, 0.18);
+    color: var(--red);
+  }
+  .status-pill.closed {
+    background: rgba(100, 116, 139, 0.2);
+    color: #cbd5e1;
+  }
+  .resource-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--muted);
+    font-size: 11px;
+    margin-top: 5px;
+  }
+  .resource-value {
+    color: #f8fdff;
+    font-weight: 900;
+    text-align: right;
+  }
+  @keyframes overloadPulse {
+    from { transform: translateY(0); }
+    to { transform: translateY(-2px); }
+  }
+  @media (max-width: 1100px) {
+    .resource-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
 </style>
 </head>
 <body>
@@ -246,6 +374,108 @@ def build_professional_control_center_html() -> str:
       <span>Yellow dots: passengers</span>
       <span>Green dots: boarded</span>
       <span>Progress bars activate at counters</span>
+    </div>
+    <div class="operations-grid">
+      <section class="control-panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Resource Operations Monitor</div>
+            <div class="panel-subtitle">Live service state for counters, lanes, immigration and gates</div>
+          </div>
+        </div>
+        <div class="resource-groups">
+          <div class="resource-group">
+            <div class="resource-group-title">Check-in Counters</div>
+            <div class="resource-stack">
+              <div class="resource-card" data-resource="checkin-0">
+                <div class="resource-name">Counter 1 <span class="status-pill" data-field="status">OPEN</span></div>
+                <div class="resource-row"><span>Current passenger</span><span class="resource-value" data-field="passenger">None</span></div>
+                <div class="resource-row"><span>Queue length</span><span class="resource-value" data-field="queue">0</span></div>
+                <div class="resource-row"><span>Average wait</span><span class="resource-value" data-field="wait">0.0 min</span></div>
+                <div class="resource-row"><span>Remaining service</span><span class="resource-value" data-field="remaining">0.0 min</span></div>
+              </div>
+              <div class="resource-card" data-resource="checkin-1">
+                <div class="resource-name">Counter 2 <span class="status-pill" data-field="status">OPEN</span></div>
+                <div class="resource-row"><span>Current passenger</span><span class="resource-value" data-field="passenger">None</span></div>
+                <div class="resource-row"><span>Queue length</span><span class="resource-value" data-field="queue">0</span></div>
+                <div class="resource-row"><span>Average wait</span><span class="resource-value" data-field="wait">0.0 min</span></div>
+                <div class="resource-row"><span>Remaining service</span><span class="resource-value" data-field="remaining">0.0 min</span></div>
+              </div>
+              <div class="resource-card" data-resource="checkin-2">
+                <div class="resource-name">Counter 3 <span class="status-pill" data-field="status">OPEN</span></div>
+                <div class="resource-row"><span>Current passenger</span><span class="resource-value" data-field="passenger">None</span></div>
+                <div class="resource-row"><span>Queue length</span><span class="resource-value" data-field="queue">0</span></div>
+                <div class="resource-row"><span>Average wait</span><span class="resource-value" data-field="wait">0.0 min</span></div>
+                <div class="resource-row"><span>Remaining service</span><span class="resource-value" data-field="remaining">0.0 min</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="resource-group">
+            <div class="resource-group-title">Security Lanes</div>
+            <div class="resource-stack">
+              <div class="resource-card" data-resource="security-0">
+                <div class="resource-name">Lane 1 <span class="status-pill" data-field="status">OPEN</span></div>
+                <div class="resource-row"><span>Current passenger</span><span class="resource-value" data-field="passenger">None</span></div>
+                <div class="resource-row"><span>Queue length</span><span class="resource-value" data-field="queue">0</span></div>
+                <div class="resource-row"><span>Average wait</span><span class="resource-value" data-field="wait">0.0 min</span></div>
+                <div class="resource-row"><span>Remaining service</span><span class="resource-value" data-field="remaining">0.0 min</span></div>
+              </div>
+              <div class="resource-card" data-resource="security-1">
+                <div class="resource-name">Lane 2 <span class="status-pill" data-field="status">OPEN</span></div>
+                <div class="resource-row"><span>Current passenger</span><span class="resource-value" data-field="passenger">None</span></div>
+                <div class="resource-row"><span>Queue length</span><span class="resource-value" data-field="queue">0</span></div>
+                <div class="resource-row"><span>Average wait</span><span class="resource-value" data-field="wait">0.0 min</span></div>
+                <div class="resource-row"><span>Remaining service</span><span class="resource-value" data-field="remaining">0.0 min</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="resource-group">
+            <div class="resource-group-title">Immigration Counters</div>
+            <div class="resource-stack">
+              <div class="resource-card" data-resource="immigration-0">
+                <div class="resource-name">Immigration 1 <span class="status-pill" data-field="status">OPEN</span></div>
+                <div class="resource-row"><span>Current passenger</span><span class="resource-value" data-field="passenger">None</span></div>
+                <div class="resource-row"><span>Queue length</span><span class="resource-value" data-field="queue">0</span></div>
+                <div class="resource-row"><span>Average wait</span><span class="resource-value" data-field="wait">0.0 min</span></div>
+                <div class="resource-row"><span>Remaining service</span><span class="resource-value" data-field="remaining">0.0 min</span></div>
+              </div>
+              <div class="resource-card" data-resource="immigration-1">
+                <div class="resource-name">Immigration 2 <span class="status-pill" data-field="status">OPEN</span></div>
+                <div class="resource-row"><span>Current passenger</span><span class="resource-value" data-field="passenger">None</span></div>
+                <div class="resource-row"><span>Queue length</span><span class="resource-value" data-field="queue">0</span></div>
+                <div class="resource-row"><span>Average wait</span><span class="resource-value" data-field="wait">0.0 min</span></div>
+                <div class="resource-row"><span>Remaining service</span><span class="resource-value" data-field="remaining">0.0 min</span></div>
+              </div>
+              <div class="resource-card" data-resource="immigration-2">
+                <div class="resource-name">Immigration 3 <span class="status-pill" data-field="status">OPEN</span></div>
+                <div class="resource-row"><span>Current passenger</span><span class="resource-value" data-field="passenger">None</span></div>
+                <div class="resource-row"><span>Queue length</span><span class="resource-value" data-field="queue">0</span></div>
+                <div class="resource-row"><span>Average wait</span><span class="resource-value" data-field="wait">0.0 min</span></div>
+                <div class="resource-row"><span>Remaining service</span><span class="resource-value" data-field="remaining">0.0 min</span></div>
+              </div>
+            </div>
+          </div>
+          <div class="resource-group">
+            <div class="resource-group-title">Boarding Gates</div>
+            <div class="resource-stack">
+              <div class="resource-card" data-resource="boarding-0">
+                <div class="resource-name">Gate A1 <span class="status-pill" data-field="status">OPEN</span></div>
+                <div class="resource-row"><span>Current passenger</span><span class="resource-value" data-field="passenger">None</span></div>
+                <div class="resource-row"><span>Queue length</span><span class="resource-value" data-field="queue">0</span></div>
+                <div class="resource-row"><span>Average wait</span><span class="resource-value" data-field="wait">0.0 min</span></div>
+                <div class="resource-row"><span>Remaining service</span><span class="resource-value" data-field="remaining">0.0 min</span></div>
+              </div>
+              <div class="resource-card" data-resource="boarding-1">
+                <div class="resource-name">Gate A2 <span class="status-pill" data-field="status">OPEN</span></div>
+                <div class="resource-row"><span>Current passenger</span><span class="resource-value" data-field="passenger">None</span></div>
+                <div class="resource-row"><span>Queue length</span><span class="resource-value" data-field="queue">0</span></div>
+                <div class="resource-row"><span>Average wait</span><span class="resource-value" data-field="wait">0.0 min</span></div>
+                <div class="resource-row"><span>Remaining service</span><span class="resource-value" data-field="remaining">0.0 min</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
     </div>
   </div>
 <script>
