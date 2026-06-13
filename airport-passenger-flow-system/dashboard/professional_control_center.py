@@ -252,6 +252,20 @@ def render_professional_streamlit_css() -> None:
             margin: 0;
             padding-left: 18px;
         }
+        .pcc-situation {
+            background: #071624;
+            border: 1px solid rgba(59, 215, 255, 0.32);
+            border-left: 5px solid #3bd7ff;
+            border-radius: 8px;
+            color: #d7eaf5;
+            font-size: 15px;
+            line-height: 1.55;
+            margin-bottom: 16px;
+            padding: 16px;
+        }
+        .pcc-situation strong {
+            color: #ecf8ff;
+        }
         </style>
         """,
         unsafe_allow_html=True,
@@ -849,6 +863,83 @@ def render_control_center_analytics(
     chart_col6.plotly_chart(gauge_chart, use_container_width=True)
 
     return analytics
+
+
+def render_airport_situation_summary(
+    flight_rows: list[dict[str, object]],
+    analytics: dict[str, pd.DataFrame | dict[str, float | int]],
+) -> None:
+    """Render a plain-language airport situation summary."""
+
+    stage_data = build_stage_waiting_analytics(flight_rows, analytics)
+    busiest_stage = stage_data.sort_values(
+        by=["waiting_passengers", "average_wait"],
+        ascending=False,
+    ).iloc[0]
+    delayed_flights = [
+        str(flight["flight"])
+        for flight in flight_rows
+        if flight["delayMinutes"] > 0 or flight["delayProbability"] >= 0.55
+    ]
+    delayed_text = ", ".join(delayed_flights) if delayed_flights else "none"
+
+    st.markdown(
+        """
+        <div class="pcc-panel">
+            <div class="pcc-panel-title">Current Airport Situation</div>
+            <div class="pcc-panel-subtitle">Plain-language operations summary for demos and viva presentations</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.markdown(
+        (
+            '<div class="pcc-situation">'
+            f"Airport operations are currently congested at <strong>{html.escape(str(busiest_stage['stage']))}</strong>. "
+            f"<strong>{int(busiest_stage['waiting_passengers'])}</strong> passengers are waiting. "
+            f"Flights <strong>{html.escape(delayed_text)}</strong> are delayed. "
+            f"Average {html.escape(str(busiest_stage['stage']))} Wait Time is "
+            f"<strong>{float(busiest_stage['average_wait']):.1f} minutes</strong>."
+            "</div>"
+        ),
+        unsafe_allow_html=True,
+    )
+
+
+def render_static_flight_board(flight_rows: list[dict[str, object]]) -> None:
+    """Render the enhanced flight board in Streamlit outside the animated map."""
+
+    board_rows = []
+    for flight in flight_rows:
+        status = "DELAYED" if flight["delayMinutes"] > 0 or flight["delayProbability"] >= 0.55 else "ON TIME"
+        if flight["delayMinutes"] == 0 and flight["bottleneckStage"] == "None":
+            estimated_minutes = int(flight["scheduledMinutes"])
+        else:
+            estimated_minutes = int(flight["scheduledMinutes"]) + int(flight["delayMinutes"])
+        board_rows.append(
+            {
+                "Flight": flight["flight"],
+                "Destination": flight["destination"],
+                "Gate": flight["gate"],
+                "Scheduled Time": f"{int(flight['scheduledMinutes']) // 60:02d}:{int(flight['scheduledMinutes']) % 60:02d}",
+                "Estimated Time": f"{estimated_minutes // 60:02d}:{estimated_minutes % 60:02d}",
+                "Status": status,
+                "Delay Reason": flight["delayReason"],
+                "Passengers Waiting": flight["passengersWaiting"],
+                "Bottleneck Stage": flight["bottleneckStage"],
+            }
+        )
+
+    st.markdown(
+        """
+        <div class="pcc-panel">
+            <div class="pcc-panel-title">Enhanced Flight Information Board</div>
+            <div class="pcc-panel-subtitle">Flight, destination, gate, schedule, delay reason and bottleneck stage</div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+    st.dataframe(pd.DataFrame(board_rows), use_container_width=True, hide_index=True)
 
 
 def build_delay_explanations(
@@ -2334,16 +2425,50 @@ def render_professional_airport_control_center_page() -> None:
     render_professional_streamlit_css()
     delay_data = load_professional_delay_data()
     model = load_professional_delay_model()
-    selected_input, prediction_summary = render_delay_prediction_section(delay_data, model)
-    flight_rows = build_control_center_flight_rows(delay_data, model, selected_input)
-
-    components.html(
-        build_professional_control_center_html(flight_rows),
-        height=1380,
-        scrolling=True,
+    (
+        control_tab,
+        map_tab,
+        delay_tab,
+        flight_tab,
+        stage_tab,
+        event_tab,
+    ) = st.tabs(
+        [
+            "Control Panel",
+            "Live Airport Map",
+            "Delay Explanation",
+            "Flight Board",
+            "Stage Analytics",
+            "Event Center",
+        ]
     )
-    analytics = render_control_center_analytics(flight_rows, prediction_summary)
-    render_delay_explanation_center(flight_rows, analytics)
-    stage_data = render_stage_waiting_analytics(flight_rows, analytics)
-    render_bottleneck_heatmap(stage_data)
-    render_control_center_event_log(flight_rows)
+
+    with control_tab:
+        selected_input, prediction_summary = render_delay_prediction_section(delay_data, model)
+
+    flight_rows = build_control_center_flight_rows(delay_data, model, selected_input)
+    analytics = build_control_center_analytics(flight_rows, prediction_summary)
+
+    with control_tab:
+        render_airport_situation_summary(flight_rows, analytics)
+
+    with map_tab:
+        components.html(
+            build_professional_control_center_html(flight_rows),
+            height=1380,
+            scrolling=True,
+        )
+
+    with delay_tab:
+        render_delay_explanation_center(flight_rows, analytics)
+
+    with flight_tab:
+        render_static_flight_board(flight_rows)
+
+    with stage_tab:
+        analytics = render_control_center_analytics(flight_rows, prediction_summary)
+        stage_data = render_stage_waiting_analytics(flight_rows, analytics)
+        render_bottleneck_heatmap(stage_data)
+
+    with event_tab:
+        render_control_center_event_log(flight_rows)
