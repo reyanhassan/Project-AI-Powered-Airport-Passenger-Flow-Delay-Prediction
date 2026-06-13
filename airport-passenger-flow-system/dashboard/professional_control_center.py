@@ -113,6 +113,7 @@ def build_professional_control_center_html() -> str:
   .boarding-gates { left: 842px; top: 588px; width: 190px; height: 122px; }
   .aircraft { left: 1092px; top: 600px; width: 170px; height: 104px; }
   .desk {
+    position: relative;
     border: 1px solid rgba(59, 215, 255, 0.42);
     background: rgba(59, 215, 255, 0.11);
     border-radius: 7px;
@@ -121,6 +122,16 @@ def build_professional_control_center_html() -> str:
     color: #e8f8ff;
     font-size: 11px;
     font-weight: 800;
+    overflow: hidden;
+  }
+  .desk .progress {
+    position: absolute;
+    left: 0;
+    bottom: 0;
+    height: 3px;
+    width: 0%;
+    background: linear-gradient(90deg, var(--green), var(--neon));
+    transition: width 0.28s ease;
   }
   .route {
     position: absolute;
@@ -164,6 +175,46 @@ def build_professional_control_center_html() -> str:
     border-radius: 999px;
     padding: 6px 10px;
   }
+  .passenger {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: var(--yellow);
+    border: 2px solid #fff0b8;
+    box-shadow: 0 0 15px rgba(255, 209, 102, 0.64);
+    transform: translate(-40px, -40px);
+    transition: opacity 0.2s ease;
+    z-index: 20;
+  }
+  .passenger::after {
+    content: attr(data-id);
+    position: absolute;
+    top: 21px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px;
+    font-weight: 900;
+    color: #eefaff;
+    text-shadow: 0 1px 4px #000;
+    white-space: nowrap;
+  }
+  .passenger.boarded {
+    background: var(--green);
+    border-color: #d9ffec;
+    box-shadow: 0 0 15px rgba(52, 211, 153, 0.68);
+  }
+  .queue-dot {
+    position: absolute;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: rgba(59, 215, 255, 0.72);
+    box-shadow: 0 0 11px rgba(59, 215, 255, 0.7);
+    z-index: 8;
+  }
 </style>
 </head>
 <body>
@@ -180,14 +231,14 @@ def build_professional_control_center_html() -> str:
       <div class="route down"></div>
       <section class="zone entrance"><div class="zone-title">Entrance</div><div class="zone-note">Arrivals enter terminal</div></section>
       <section class="zone checkin-queue"><div class="zone-title">Check-in Queue</div><div class="zone-note">Waiting passengers</div></section>
-      <section class="zone checkin-counters"><div class="zone-title">Check-in Counters</div><div class="desk">Counter 1</div><div class="desk">Counter 2</div><div class="desk">Counter 3</div></section>
+      <section class="zone checkin-counters"><div class="zone-title">Check-in Counters</div><div class="desk service-desk">Counter 1<div class="progress"></div></div><div class="desk service-desk">Counter 2<div class="progress"></div></div><div class="desk service-desk">Counter 3<div class="progress"></div></div></section>
       <section class="zone security-queue"><div class="zone-title">Security Queue</div><div class="zone-note">Screening line</div></section>
-      <section class="zone security-lanes"><div class="zone-title">Security Lanes</div><div class="desk">Lane 1</div><div class="desk">Lane 2</div></section>
+      <section class="zone security-lanes"><div class="zone-title">Security Lanes</div><div class="desk service-desk">Lane 1<div class="progress"></div></div><div class="desk service-desk">Lane 2<div class="progress"></div></div></section>
       <section class="zone immigration-queue"><div class="zone-title">Immigration Queue</div><div class="zone-note">Passport control line</div></section>
-      <section class="zone immigration-counters"><div class="zone-title">Immigration Counters</div><div class="desk">Immigration 1</div><div class="desk">Immigration 2</div><div class="desk">Immigration 3</div></section>
+      <section class="zone immigration-counters"><div class="zone-title">Immigration Counters</div><div class="desk service-desk">Immigration 1<div class="progress"></div></div><div class="desk service-desk">Immigration 2<div class="progress"></div></div><div class="desk service-desk">Immigration 3<div class="progress"></div></div></section>
       <section class="zone lounge"><div class="zone-title">Waiting Lounge</div><div class="zone-note">Cleared passengers</div></section>
       <section class="zone boarding-queue"><div class="zone-title">Boarding Queue</div><div class="zone-note">Gate line-up</div></section>
-      <section class="zone boarding-gates"><div class="zone-title">Boarding Gates</div><div class="desk">Gate A1</div><div class="desk">Gate A2</div></section>
+      <section class="zone boarding-gates"><div class="zone-title">Boarding Gates</div><div class="desk service-desk">Gate A1<div class="progress"></div></div><div class="desk service-desk">Gate A2<div class="progress"></div></div></section>
       <section class="zone aircraft"><div class="zone-title">Aircraft</div><div class="zone-note">Boarded area</div><div class="aircraft-body"></div></section>
     </div>
     <div class="legend">
@@ -197,6 +248,141 @@ def build_professional_control_center_html() -> str:
       <span>Progress bars activate at counters</span>
     </div>
   </div>
+<script>
+(() => {
+  const map = document.getElementById("airport-map");
+  const progressBars = Array.from(document.querySelectorAll(".service-desk .progress"));
+  const passengerCount = 46;
+  const speed = 1.12;
+  const points = {
+    entrance: { x: 82, y: 370 },
+    checkinQueue: { x: 238, y: 370 },
+    checkinCounter: { x: 444, y: 370 },
+    securityQueue: { x: 616, y: 370 },
+    securityLane: { x: 804, y: 370 },
+    immigrationQueue: { x: 976, y: 370 },
+    immigrationCounter: { x: 1168, y: 370 },
+    lounge: { x: 398, y: 648 },
+    boardingQueue: { x: 682, y: 648 },
+    boardingGate: { x: 934, y: 648 },
+    aircraft: { x: 1180, y: 648 }
+  };
+  const stages = [
+    { name: "entrance", from: "entrance", to: "checkinQueue", duration: 2.0 },
+    { name: "checkinQueue", from: "checkinQueue", to: "checkinQueue", duration: 3.0, queue: "checkin" },
+    { name: "checkinCounter", from: "checkinQueue", to: "checkinCounter", duration: 3.4, progress: [0, 1, 2] },
+    { name: "securityQueue", from: "checkinCounter", to: "securityQueue", duration: 2.5, queue: "security" },
+    { name: "securityLane", from: "securityQueue", to: "securityLane", duration: 3.2, progress: [3, 4] },
+    { name: "immigrationQueue", from: "securityLane", to: "immigrationQueue", duration: 2.4, queue: "immigration" },
+    { name: "immigrationCounter", from: "immigrationQueue", to: "immigrationCounter", duration: 3.8, progress: [5, 6, 7] },
+    { name: "lounge", from: "immigrationCounter", to: "lounge", duration: 4.5 },
+    { name: "boardingQueue", from: "lounge", to: "boardingQueue", duration: 3.2, queue: "boarding" },
+    { name: "boardingGate", from: "boardingQueue", to: "boardingGate", duration: 3.8, progress: [8, 9] },
+    { name: "aircraft", from: "boardingGate", to: "aircraft", duration: 3.2 },
+    { name: "boarded", from: "aircraft", to: "aircraft", duration: 999 }
+  ];
+
+  function ease(value) {
+    return value < 0.5 ? 2 * value * value : 1 - Math.pow(-2 * value + 2, 2) / 2;
+  }
+
+  function interpolate(start, end, progress) {
+    const curved = ease(Math.max(0, Math.min(progress, 1)));
+    return {
+      x: start.x + (end.x - start.x) * curved,
+      y: start.y + (end.y - start.y) * curved
+    };
+  }
+
+  function queuePosition(queue, index) {
+    const column = index % 5;
+    const row = Math.floor(index / 5) % 7;
+    const positions = {
+      checkin: { x: 208, y: 296, gapX: 23, gapY: 20 },
+      security: { x: 582, y: 296, gapX: 21, gapY: 20 },
+      immigration: { x: 938, y: 296, gapX: 23, gapY: 20 },
+      boarding: { x: 622, y: 626, gapX: 23, gapY: 17 }
+    };
+    const base = positions[queue];
+    return { x: base.x + column * base.gapX, y: base.y + row * base.gapY };
+  }
+
+  function phaseFor(localTime, index) {
+    let cursor = 0;
+    for (const stage of stages) {
+      const next = cursor + stage.duration;
+      if (localTime <= next) {
+        const progress = (localTime - cursor) / stage.duration;
+        if (stage.queue && progress < 0.74) {
+          return { stage, progress, position: queuePosition(stage.queue, index) };
+        }
+        return {
+          stage,
+          progress,
+          position: interpolate(points[stage.from], points[stage.to], progress)
+        };
+      }
+      cursor = next;
+    }
+    return { stage: stages[stages.length - 1], progress: 1, position: points.aircraft };
+  }
+
+  function createPassenger(index) {
+    const element = document.createElement("div");
+    element.className = "passenger";
+    element.dataset.id = `P${String(index + 1).padStart(3, "0")}`;
+    map.appendChild(element);
+    return { index, element, delay: index * 0.45 };
+  }
+
+  function createQueueDots() {
+    [["checkin", 15], ["security", 12], ["immigration", 13], ["boarding", 10]].forEach(([queue, count]) => {
+      for (let index = 0; index < count; index += 1) {
+        const dot = document.createElement("div");
+        const position = queuePosition(queue, index);
+        dot.className = "queue-dot";
+        dot.style.left = `${position.x + 7}px`;
+        dot.style.top = `${position.y + 7}px`;
+        map.appendChild(dot);
+      }
+    });
+  }
+
+  function resetProgressBars() {
+    progressBars.forEach((bar) => { bar.style.width = "0%"; });
+  }
+
+  function updateProgress(stage, progress, passengerIndex) {
+    if (!stage.progress) return;
+    const barIndex = stage.progress[passengerIndex % stage.progress.length];
+    if (progressBars[barIndex]) progressBars[barIndex].style.width = `${Math.round(progress * 100)}%`;
+  }
+
+  createQueueDots();
+  const passengers = Array.from({ length: passengerCount }, (_, index) => createPassenger(index));
+  const startedAt = performance.now();
+
+  function animate(now) {
+    const elapsed = ((now - startedAt) / 1000) * speed;
+    resetProgressBars();
+    passengers.forEach((passenger) => {
+      const localTime = elapsed - passenger.delay;
+      if (localTime < 0) {
+        passenger.element.style.opacity = "0";
+        return;
+      }
+      const state = phaseFor(localTime, passenger.index);
+      passenger.element.style.opacity = "1";
+      passenger.element.style.transform = `translate(${state.position.x}px, ${state.position.y}px)`;
+      passenger.element.classList.toggle("boarded", ["aircraft", "boarded"].includes(state.stage.name));
+      updateProgress(state.stage, state.progress, passenger.index);
+    });
+    requestAnimationFrame(animate);
+  }
+
+  requestAnimationFrame(animate);
+})();
+</script>
 </body>
 </html>
 """
