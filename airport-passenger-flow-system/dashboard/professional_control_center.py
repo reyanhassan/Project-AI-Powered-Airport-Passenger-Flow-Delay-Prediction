@@ -870,6 +870,10 @@ def build_professional_control_center_html(
     color: var(--neon);
     box-shadow: 0 0 16px rgba(59, 215, 255, 0.16);
   }
+  .sim-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
   .airport-map {
     position: relative;
     height: 760px;
@@ -1263,13 +1267,16 @@ def build_professional_control_center_html(
     <div class="sim-control-strip" aria-label="Simulation Speed Control">
       <div>
         <div class="sim-control-title">Simulation Speed Control</div>
-        <div class="subtitle">Default: Slow | changes apply immediately</div>
+        <div class="subtitle">Default: Slow | Auto or Step-by-Step demonstration mode</div>
       </div>
       <div class="sim-control-buttons">
         <button class="sim-button" data-speed="0.25">Very Slow</button>
         <button class="sim-button active" data-speed="0.65">Slow</button>
         <button class="sim-button" data-speed="1.12">Normal</button>
         <button class="sim-button" data-speed="2.1">Fast</button>
+        <button class="sim-button active" data-mode="auto">Auto Simulation</button>
+        <button class="sim-button" data-mode="step">Step-by-Step Simulation</button>
+        <button class="sim-button" id="next-step-button" disabled>Next Step</button>
       </div>
     </div>
     <div class="airport-map" id="airport-map">
@@ -1428,8 +1435,12 @@ def build_professional_control_center_html(
   const flightBoardBody = document.getElementById("flight-board-body");
   const flightClock = document.getElementById("flight-clock");
   const speedButtons = Array.from(document.querySelectorAll("[data-speed]"));
+  const modeButtons = Array.from(document.querySelectorAll("[data-mode]"));
+  const nextStepButton = document.getElementById("next-step-button");
   const passengerCount = 46;
   let speed = 0.65;
+  let simulationMode = "auto";
+  let stepIndex = 0;
   let lastFlightTick = -1;
   const resources = [
     { id: "checkin-0", group: "checkin", label: "Check-in Counter 1", index: 0, count: 3, serviceStage: "checkinCounter", queue: "checkin", baseWait: 2.4, waitFactor: 0.85, serviceMinutes: 3.4, busyAt: 2, overloadAt: 5 },
@@ -1471,6 +1482,11 @@ def build_professional_control_center_html(
     { name: "aircraft", from: "boardingGate", to: "aircraft", duration: 3.2 },
     { name: "boarded", from: "aircraft", to: "aircraft", duration: 999 }
   ];
+  const stepMoments = stages.slice(0, -1).reduce((moments, stage, index) => {
+    const previous = index === 0 ? 0 : moments[index - 1];
+    moments.push(previous + Math.min(stage.duration, 5));
+    return moments;
+  }, [0]);
 
   function ease(value) {
     return value < 0.5 ? 2 * value * value : 1 - Math.pow(-2 * value + 2, 2) / 2;
@@ -1704,6 +1720,19 @@ def build_professional_control_center_html(
       button.classList.add("active");
     });
   });
+  modeButtons.forEach((button) => {
+    button.addEventListener("click", () => {
+      simulationMode = button.dataset.mode;
+      modeButtons.forEach((item) => item.classList.remove("active"));
+      button.classList.add("active");
+      nextStepButton.disabled = simulationMode !== "step";
+    });
+  });
+  nextStepButton.addEventListener("click", () => {
+    if (simulationMode !== "step") return;
+    stepIndex = (stepIndex + 1) % stepMoments.length;
+    simulationElapsed = stepMoments[stepIndex];
+  });
 
   createQueueDots();
   const passengers = Array.from({ length: passengerCount }, (_, index) => createPassenger(index));
@@ -1713,7 +1742,9 @@ def build_professional_control_center_html(
   function animate(now) {
     const frameDelta = Math.min((now - lastFrameTime) / 1000, 0.08);
     lastFrameTime = now;
-    simulationElapsed += frameDelta * speed;
+    if (simulationMode === "auto") {
+      simulationElapsed += frameDelta * speed;
+    }
     const elapsed = simulationElapsed;
     const passengerStates = [];
     resetProgressBars();
