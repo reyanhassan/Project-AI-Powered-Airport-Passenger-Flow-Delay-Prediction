@@ -367,6 +367,88 @@ def build_professional_control_center_html() -> str:
     from { transform: translateY(0); }
     to { transform: translateY(-2px); }
   }
+  .flight-panel {
+    overflow: hidden;
+  }
+  .flight-clock {
+    border: 1px solid rgba(59, 215, 255, 0.38);
+    border-radius: 8px;
+    color: var(--neon);
+    background: rgba(3, 9, 20, 0.55);
+    padding: 8px 10px;
+    min-width: 110px;
+    text-align: center;
+    font-weight: 900;
+  }
+  .flight-board-table {
+    width: 100%;
+    border-collapse: collapse;
+    color: #effaff;
+    font-size: 13px;
+    overflow: hidden;
+    border-radius: 10px;
+  }
+  .flight-board-table th {
+    background: rgba(59, 215, 255, 0.14);
+    color: var(--neon);
+    padding: 10px;
+    text-align: left;
+    text-transform: uppercase;
+    font-size: 11px;
+    letter-spacing: 0;
+    border-bottom: 1px solid rgba(59, 215, 255, 0.28);
+  }
+  .flight-board-table td {
+    background: rgba(3, 9, 20, 0.62);
+    border-bottom: 1px solid rgba(59, 215, 255, 0.12);
+    padding: 10px;
+    font-weight: 800;
+  }
+  .flight-board-table tr:last-child td {
+    border-bottom: none;
+  }
+  .flight-row.delayed td {
+    background: rgba(248, 113, 113, 0.14);
+    animation: delayedRowPulse 0.95s infinite alternate;
+  }
+  .flight-status-badge {
+    display: inline-flex;
+    justify-content: center;
+    min-width: 98px;
+    border-radius: 999px;
+    padding: 4px 9px;
+    font-size: 11px;
+    font-weight: 900;
+  }
+  .flight-status-badge.on-time {
+    background: rgba(52, 211, 153, 0.18);
+    color: var(--green);
+  }
+  .flight-status-badge.delayed {
+    background: rgba(248, 113, 113, 0.2);
+    color: var(--red);
+    animation: delayBlink 0.72s infinite alternate;
+  }
+  .flight-status-badge.boarding {
+    background: rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+  }
+  .flight-status-badge.gate-closed {
+    background: rgba(251, 191, 36, 0.18);
+    color: var(--busy);
+  }
+  .flight-status-badge.departed {
+    background: rgba(100, 116, 139, 0.24);
+    color: #cbd5e1;
+  }
+  @keyframes delayedRowPulse {
+    from { box-shadow: inset 4px 0 0 rgba(248, 113, 113, 0.28); }
+    to { box-shadow: inset 4px 0 0 rgba(248, 113, 113, 0.86); }
+  }
+  @keyframes delayBlink {
+    from { filter: brightness(0.86); }
+    to { filter: brightness(1.35); }
+  }
   @media (max-width: 1100px) {
     .resource-groups { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   }
@@ -504,6 +586,28 @@ def build_professional_control_center_html() -> str:
           </div>
         </div>
       </section>
+      <section class="control-panel flight-panel">
+        <div class="panel-header">
+          <div>
+            <div class="panel-title">Airport Flight Information Board</div>
+            <div class="panel-subtitle">Gate-level departure status with animated delay alerts</div>
+          </div>
+          <div class="flight-clock" id="flight-clock">09:00</div>
+        </div>
+        <table class="flight-board-table" aria-label="Airport Flight Information Board">
+          <thead>
+            <tr>
+              <th>Flight</th>
+              <th>Destination</th>
+              <th>Gate</th>
+              <th>Scheduled</th>
+              <th>Estimated</th>
+              <th>Status</th>
+            </tr>
+          </thead>
+          <tbody id="flight-board-body"></tbody>
+        </table>
+      </section>
     </div>
   </div>
 <script>
@@ -512,8 +616,11 @@ def build_professional_control_center_html() -> str:
   const progressBars = Array.from(document.querySelectorAll(".service-desk .progress"));
   const resourceCards = Array.from(document.querySelectorAll(".resource-card"));
   const bottleneckAlert = document.getElementById("bottleneck-alert");
+  const flightBoardBody = document.getElementById("flight-board-body");
+  const flightClock = document.getElementById("flight-clock");
   const passengerCount = 46;
   const speed = 1.12;
+  let lastFlightTick = -1;
   const resources = [
     { id: "checkin-0", group: "checkin", label: "Check-in Counter 1", index: 0, count: 3, serviceStage: "checkinCounter", queue: "checkin", baseWait: 2.4, waitFactor: 0.85, serviceMinutes: 3.4, busyAt: 2, overloadAt: 5 },
     { id: "checkin-1", group: "checkin", label: "Check-in Counter 2", index: 1, count: 3, serviceStage: "checkinCounter", queue: "checkin", baseWait: 2.4, waitFactor: 0.85, serviceMinutes: 3.4, busyAt: 2, overloadAt: 5 },
@@ -525,6 +632,14 @@ def build_professional_control_center_html() -> str:
     { id: "immigration-2", group: "immigration", label: "Immigration Counter 3", index: 2, count: 3, serviceStage: "immigrationCounter", queue: "immigration", baseWait: 3.8, waitFactor: 1.05, serviceMinutes: 3.8, busyAt: 2, overloadAt: 5, closesAfter: 62 },
     { id: "boarding-0", group: "boarding", label: "Boarding Gate A1", index: 0, count: 2, serviceStage: "boardingGate", queue: "boarding", baseWait: 1.6, waitFactor: 0.72, serviceMinutes: 3.8, busyAt: 2, overloadAt: 5 },
     { id: "boarding-1", group: "boarding", label: "Boarding Gate A2", index: 1, count: 2, serviceStage: "boardingGate", queue: "boarding", baseWait: 1.6, waitFactor: 0.72, serviceMinutes: 3.8, busyAt: 2, overloadAt: 5, opensAfter: 28 }
+  ];
+  const flights = [
+    { flight: "PK-302", destination: "Karachi", gate: "A1", scheduledMinutes: 9 * 60 + 10, delayMinutes: 0, delayStart: 12, boardingStart: 24, gateClosedStart: 43, departedStart: 58 },
+    { flight: "AP-144", destination: "Lahore", gate: "A2", scheduledMinutes: 9 * 60 + 25, delayMinutes: 18, delayStart: 10, boardingStart: 54, gateClosedStart: 70, departedStart: 82 },
+    { flight: "SA-781", destination: "Dubai", gate: "B3", scheduledMinutes: 9 * 60 + 40, delayMinutes: 0, delayStart: 16, boardingStart: 36, gateClosedStart: 55, departedStart: 72 },
+    { flight: "ER-219", destination: "Islamabad", gate: "C1", scheduledMinutes: 10 * 60 + 5, delayMinutes: 24, delayStart: 18, boardingStart: 66, gateClosedStart: 80, departedStart: 92 },
+    { flight: "GB-508", destination: "Doha", gate: "A4", scheduledMinutes: 10 * 60 + 20, delayMinutes: 0, delayStart: 24, boardingStart: 52, gateClosedStart: 75, departedStart: 90 },
+    { flight: "PK-419", destination: "Jeddah", gate: "D2", scheduledMinutes: 10 * 60 + 35, delayMinutes: 35, delayStart: 22, boardingStart: 78, gateClosedStart: 94, departedStart: 108 }
   ];
   const points = {
     entrance: { x: 82, y: 370 },
@@ -723,6 +838,62 @@ def build_professional_control_center_html() -> str:
     bottleneckAlert.textContent = message;
   }
 
+  function formatTime(totalMinutes) {
+    const dayMinutes = 24 * 60;
+    const normalized = ((Math.round(totalMinutes) % dayMinutes) + dayMinutes) % dayMinutes;
+    const hours = String(Math.floor(normalized / 60)).padStart(2, "0");
+    const minutes = String(normalized % 60).padStart(2, "0");
+    return `${hours}:${minutes}`;
+  }
+
+  function flightStatusFor(flight, elapsed) {
+    const cycle = elapsed % 116;
+    const hasDelay = flight.delayMinutes > 0;
+    let status = "ON TIME";
+    let estimatedMinutes = flight.scheduledMinutes;
+
+    if (hasDelay && cycle >= flight.delayStart && cycle < flight.boardingStart) {
+      status = "DELAYED";
+      estimatedMinutes += flight.delayMinutes;
+    } else if (cycle >= flight.departedStart) {
+      status = "DEPARTED";
+      estimatedMinutes += flight.delayMinutes;
+    } else if (cycle >= flight.gateClosedStart) {
+      status = "GATE CLOSED";
+      estimatedMinutes += flight.delayMinutes;
+    } else if (cycle >= flight.boardingStart) {
+      status = "BOARDING";
+      estimatedMinutes += flight.delayMinutes;
+    }
+
+    return { status, estimatedMinutes };
+  }
+
+  function flightStatusClass(status) {
+    return status.toLowerCase().replaceAll(" ", "-");
+  }
+
+  function updateFlightBoard(elapsed) {
+    const tick = Math.floor(elapsed * 2);
+    if (tick === lastFlightTick) return;
+    lastFlightTick = tick;
+    flightClock.textContent = formatTime(9 * 60 + elapsed);
+    flightBoardBody.innerHTML = flights.map((flight) => {
+      const state = flightStatusFor(flight, elapsed);
+      const className = flightStatusClass(state.status);
+      return `
+        <tr class="flight-row ${className}">
+          <td>${flight.flight}</td>
+          <td>${flight.destination}</td>
+          <td>${flight.gate}</td>
+          <td>${formatTime(flight.scheduledMinutes)}</td>
+          <td>${formatTime(state.estimatedMinutes)}</td>
+          <td><span class="flight-status-badge ${className}">${state.status}</span></td>
+        </tr>
+      `;
+    }).join("");
+  }
+
   createQueueDots();
   const passengers = Array.from({ length: passengerCount }, (_, index) => createPassenger(index));
   const startedAt = performance.now();
@@ -745,6 +916,7 @@ def build_professional_control_center_html() -> str:
       updateProgress(state.stage, state.progress, passenger.index);
     });
     updateResourceCards(passengerStates, elapsed);
+    updateFlightBoard(elapsed);
     requestAnimationFrame(animate);
   }
 
