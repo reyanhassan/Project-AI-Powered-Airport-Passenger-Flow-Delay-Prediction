@@ -6,3 +6,4 @@ models/*.joblib
 data/raw/*.csv
 .streamlit/secrets.toml
 boot_*.log
+boot_*.err

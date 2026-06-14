@@ -246,31 +246,70 @@ def render_live_tab() -> None:
         return
 
     st.caption("A live terminal control room: passenger dots flow through check-in → security → "
-               "immigration → boarding while the Resource Operations Monitor and ML-predicted "
-               "flight board update in real time. Each selected flight gets its own plane and "
-               "boarding lane. Use the in-map speed and step controls.")
+               "immigration → boarding while the Resource Operations Monitor and congestion-aware "
+               "flight board update in real time. Clearance depends on passenger readiness, "
+               "terminal queues, gate availability and ML risk. Use the in-map speed and step controls.")
 
     c1, c2 = st.columns([3, 1])
     all_flights = [t["flight"] for t in cc.FLIGHT_TEMPLATES]
     selected = c1.multiselect(
-        "Planes to display in the simulation", options=all_flights, default=all_flights[:3],
-        help="Pick which flights appear. Each one gets a dedicated plane and boarding lane.",
+        "Priority flights for the simulation", options=all_flights, default=all_flights,
+        help="Selected flights appear first; any empty gates are auto-filled so all six gates keep operating.",
     )
     if not selected:
-        st.info("Select at least one plane to display.")
-        selected = all_flights[:1]
+        st.info("No priority selected, so the control center will auto-fill all six gates.")
+        selected = all_flights
+    display_flights = (selected + [flight for flight in all_flights if flight not in selected])[:len(all_flights)]
     seed = c2.number_input("Scenario seed", 0, 9999, 42, key="live_seed",
                            help="Reshuffle the flights scored by the model.")
 
+    rush_options = {
+        "Light flow": 0.75,
+        "Normal flow": 1.0,
+        "Busy terminal": 1.25,
+        "Peak rush": 1.55,
+    }
+    with st.expander("Scenario controls: force delay and terminal pressure", expanded=True):
+        s1, s2, s3, s4 = st.columns([1.1, 1.1, 1.5, 1])
+        force_delay = s1.toggle("Force flight delay", value=False, key="live_force_delay")
+        delayed_flight = s2.selectbox("Flight", options=display_flights, key="live_delay_flight")
+        delay_reason = s3.selectbox(
+            "Delay reason",
+            options=list(cc.DELAY_REASON_BOTTLENECK.keys()),
+            key="live_delay_reason",
+        )
+        delay_minutes = s4.slider("Delay min", 5, 90, 24, 1, key="live_delay_minutes")
+        rush_label = st.select_slider(
+            "Terminal pressure",
+            options=list(rush_options.keys()),
+            value="Normal flow",
+            help="Higher pressure creates more passengers, tighter arrival spacing, and stricter clearance decisions.",
+            key="live_rush_level",
+        )
+        if force_delay:
+            st.info(
+                f"{delayed_flight} will be held for about {delay_minutes} minutes because of "
+                f"{delay_reason}. Bottleneck: {cc.DELAY_REASON_BOTTLENECK[delay_reason]}."
+            )
+
+    scenario = {
+        "force_delay": force_delay,
+        "flight": delayed_flight,
+        "reason": delay_reason,
+        "delay_minutes": int(delay_minutes),
+        "rush_multiplier": rush_options[rush_label],
+    }
+
     model = get_active_model()
-    flight_rows = cc.build_flight_rows(model, seed=int(seed), selected=selected)
+    flight_rows = cc.build_flight_rows(model, seed=int(seed), selected=display_flights, scenario=scenario)
 
     delayed = sum(1 for f in flight_rows if f["delayMinutes"] > 0 or f["delayProbability"] >= 0.55)
     avg_prob = np.mean([f["delayProbability"] for f in flight_rows]) if flight_rows else 0.0
-    m1, m2, m3 = st.columns(3)
+    m1, m2, m3, m4 = st.columns(4)
     m1.metric("Planes in simulation", len(flight_rows))
     m2.metric("Predicted delayed", delayed)
     m3.metric("Avg delay probability", f"{avg_prob * 100:.0f}%")
+    m4.metric("Terminal pressure", rush_label)
 
     # Taller map needs more height when more planes (and longer boarding lanes) are shown.
     components.html(cc.build_control_center_html(flight_rows), height=1660, scrolling=True)
