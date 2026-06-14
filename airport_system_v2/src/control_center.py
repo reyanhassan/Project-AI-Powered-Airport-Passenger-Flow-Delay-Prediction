@@ -263,6 +263,8 @@ _HTML_TEMPLATE = """
   .sim-button.active { border-color: rgba(59,215,255,0.9); background: rgba(59,215,255,0.18);
     color: var(--neon); box-shadow: 0 0 16px rgba(59,215,255,0.16); }
   .sim-button:disabled { cursor: not-allowed; opacity: 0.45; }
+  .start-button { border-color: rgba(52,211,153,0.62); color: #d9ffec; }
+  .start-button.active { border-color: rgba(251,191,36,0.9); background: rgba(251,191,36,0.18); color: var(--busy); }
   .fullscreen-button { border-color: rgba(52,211,153,0.56); color: #d9ffec; }
   .fullscreen-button.active { border-color: rgba(52,211,153,0.9); background: rgba(52,211,153,0.2); color: var(--green); }
   .control-shell:fullscreen { width: 100vw; height: 100vh; min-height: 100vh; overflow: auto; padding: 16px; }
@@ -450,9 +452,10 @@ _HTML_TEMPLATE = """
     <div class="sim-control-strip" aria-label="Simulation Speed Control">
       <div>
         <div class="sim-control-title">Simulation Speed Control</div>
-        <div class="subtitle">Default: Slow | Auto or Step-by-Step demonstration mode</div>
+        <div class="subtitle">Default: Paused | Click Start Simulation to begin</div>
       </div>
       <div class="sim-control-buttons">
+        <button class="sim-button start-button" id="start-button" type="button">Start Simulation</button>
         <button class="sim-button" data-speed="0.25">Very Slow</button>
         <button class="sim-button active" data-speed="0.65">Slow</button>
         <button class="sim-button" data-speed="1.12">Normal</button>
@@ -559,6 +562,7 @@ _HTML_TEMPLATE = """
   const flightBoardBody = document.getElementById("flight-board-body");
   const flightClock = document.getElementById("flight-clock");
   const flightGroupStrip = document.getElementById("flight-group-strip");
+  const startButton = document.getElementById("start-button");
   const speedButtons = Array.from(document.querySelectorAll("[data-speed]"));
   const modeButtons = Array.from(document.querySelectorAll("[data-mode]"));
   const nextStepButton = document.getElementById("next-step-button");
@@ -566,6 +570,7 @@ _HTML_TEMPLATE = """
   const fullscreenTarget = document.querySelector(".control-shell");
   let speed = 0.65;
   let simulationMode = "auto";
+  let simulationRunning = false;
   let stepIndex = 0;
   let lastFlightTick = -1;
   const GATES = ["A1", "A2", "B1", "B2", "C1", "C2"];
@@ -1239,6 +1244,21 @@ _HTML_TEMPLATE = """
         </tr>`;
     }).join("");
   }
+  function updateStartButton() {
+    startButton.classList.toggle("active", simulationRunning);
+    startButton.textContent = simulationRunning ? "Pause Simulation" : "Start Simulation";
+  }
+  startButton.addEventListener("click", () => {
+    const shouldRun = !simulationRunning;
+    if (shouldRun && simulationMode !== "auto") {
+      simulationMode = "auto";
+      modeButtons.forEach((item) => item.classList.toggle("active", item.dataset.mode === "auto"));
+      nextStepButton.disabled = true;
+    }
+    simulationRunning = shouldRun;
+    lastFrameTime = performance.now();
+    updateStartButton();
+  });
   speedButtons.forEach((button) => {
     button.addEventListener("click", () => {
       speed = Number(button.dataset.speed);
@@ -1249,13 +1269,17 @@ _HTML_TEMPLATE = """
   modeButtons.forEach((button) => {
     button.addEventListener("click", () => {
       simulationMode = button.dataset.mode;
+      if (simulationMode === "step") simulationRunning = false;
       modeButtons.forEach((item) => item.classList.remove("active"));
       button.classList.add("active");
       nextStepButton.disabled = simulationMode !== "step";
+      updateStartButton();
     });
   });
   nextStepButton.addEventListener("click", () => {
     if (simulationMode !== "step") return;
+    simulationRunning = false;
+    updateStartButton();
     stepIndex = (stepIndex + 1) % stepMoments.length;
     simulationElapsed = stepMoments[stepIndex];
   });
@@ -1314,7 +1338,7 @@ _HTML_TEMPLATE = """
   function animate(now) {
     const frameDelta = Math.min((now - lastFrameTime) / 1000, 0.08);
     lastFrameTime = now;
-    if (simulationMode === "auto") simulationElapsed += frameDelta * speed;
+    if (simulationRunning && simulationMode === "auto") simulationElapsed += frameDelta * speed;
     const elapsed = simulationElapsed;
     const passengerStates = [];
     updateFlightOperations(elapsed);
